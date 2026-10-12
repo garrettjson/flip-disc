@@ -7,6 +7,7 @@ import numpy as np
 from flipdisc.fonts.loader import load_font
 
 from .base import Animation, register_animation
+from .cadence import Cadence
 
 _VALID_MODES = {"static", "scroll_left", "scroll_up", "scroll_down"}
 
@@ -22,7 +23,8 @@ class TextAnimation(Animation):
         self._mode: str = "static"
         self._speed: float = 7.0  # pixels per second
         self._loop: bool = True
-        self._offset: float = 0.0
+        self._offset: int = 0  # whole pixels scrolled
+        self._scroll = Cadence()
         self._error: str | None = None
 
     @override
@@ -48,7 +50,8 @@ class TextAnimation(Animation):
         """Pre-render the text image based on current text and mode."""
         self._error = None
         self._text_image = None
-        self._offset = 0.0
+        self._offset = 0
+        self._scroll.reset()
         self._completed = False
 
         text = self.params.get("text", "")
@@ -81,7 +84,7 @@ class TextAnimation(Animation):
         if self._mode == "static":
             return
 
-        self._offset += self._speed * dt
+        self._offset += self._scroll.advance(self._speed, dt)
 
         if self._loop:
             return

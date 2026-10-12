@@ -5,6 +5,7 @@ from typing import override
 import numpy as np
 
 from .base import Animation, register_animation
+from .cadence import Cadence
 
 
 @register_animation("bouncing_dot")
@@ -14,13 +15,15 @@ class BouncingDot(Animation):
     def __init__(self, width: int, height: int):
         super().__init__(width, height, processing_steps=("binarize",))
 
-        # Dot position in pixels (rounded when drawn)
-        self.x = 2.0
-        self.y = 5.0
+        # Dot position (whole pixels)
+        self.x = 2
+        self.y = 5
 
-        # Velocity in pixels per second
+        # Velocity in pixels per second; the sign is the direction
         self.dx = 20.0
         self.dy = 40.0
+        self._cadence_x = Cadence()
+        self._cadence_y = Cadence()
 
     @override
     def configure(self, **params):
@@ -28,9 +31,9 @@ class BouncingDot(Animation):
         super().configure(**params)
 
         if "start_x" in params:
-            self.x = float(max(0, min(int(params["start_x"]), self.width - 1)))
+            self.x = max(0, min(int(params["start_x"]), self.width - 1))
         if "start_y" in params:
-            self.y = float(max(0, min(int(params["start_y"]), self.height - 1)))
+            self.y = max(0, min(int(params["start_y"]), self.height - 1))
         if "speed_x" in params:
             self.dx = float(params["speed_x"])
         if "speed_y" in params:
@@ -46,8 +49,10 @@ class BouncingDot(Animation):
         self.y = max(0, min(self.y, self.height - 1))
 
         # Advance position
-        self.x += self.dx * dt
-        self.y += self.dy * dt
+        step_x = self._cadence_x.advance(abs(self.dx), dt)
+        step_y = self._cadence_y.advance(abs(self.dy), dt)
+        self.x += step_x if self.dx > 0 else -step_x
+        self.y += step_y if self.dy > 0 else -step_y
 
         # Bounce off walls
         if self.x <= 0 or self.x >= self.width - 1:
@@ -64,6 +69,6 @@ class BouncingDot(Animation):
         frame = np.zeros((self.height, self.width), dtype=np.float32)
 
         # Set single pixel at current position
-        frame[round(self.y), round(self.x)] = 1.0
+        frame[self.y, self.x] = 1.0
 
         return frame

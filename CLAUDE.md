@@ -168,6 +168,7 @@ Verified behaviors that are easy to trip over. Delete an entry when you fix it.
 
 - **Animation errors are reported through `/status`, not the HTTP response.** An unknown animation name is rejected with a 400. Anything that fails later on the generator thread — a `configure()` that raises, a constructor that fails, a `step()` that throws — is logged and recorded in `pipeline.last_error` on `GET /status`, while the request that caused it has already returned 200. A failed switch or configure leaves the current animation running; an animation that raises while running is dropped (`animation` becomes `null`) and the display holds its last frame until the next successful switch.
 - **Live `configure` lags by up to `buffer_duration` (1 s).** The generator computes ahead to fill the frame buffer, so a parameter change only shows once the frames already queued have played out. Switching animations is immediate (it drains the buffer).
+- **Whole-step speeds are snapped to the frame rate.** `Cadence` rounds a requested rate to a whole number of frames per step, so at 20 fps the achievable pixel speeds are 20, 10, 6.67, 5, 4, … px/s (or 40, 60, … above one pixel per frame). A requested 13 px/s plays at 10. This is deliberate; see `flipdisc/animations/CLAUDE.md`, "Motion".
 - **A slow animation plays in slow motion.** Each produced frame advances the animation by exactly one display interval, so if frames take longer than that to compute (`fluid` does today), the display falls behind real time instead of skipping.
 - **Clips are GIFs** listed in `assets/clips/clips.toml` (create with `flipdisc/clips/importer.py`). Some docstrings still say `.npz`. No clips are checked in.
 - **`[weather]` in `config.toml` is not parsed.** The fetch loop only starts via `POST /weather/config` (the web UI does this when you start `weather`).
@@ -210,4 +211,5 @@ Run with `uv run python <script>` from the repo root. To see what the server is 
 - Catch specific exception types, not `except Exception`. Broad catches are acceptable only at thread/task crash barriers, and must log.
 - Exception layering: lower layers raise typed `FlipDiscError` subclasses with context; the top level (API routes, loops) decides severity and HTTP status
 - `@override` (from `typing`) on every overridden animation method
+- Whole-pixel or discrete motion goes through `Cadence` so its rhythm is even; only continuous values scale by `dt` directly (see `flipdisc/animations/CLAUDE.md`, "Motion")
 - Tests live in `flipdisc/tests/test_*.py`; no hardware or network access in tests (mock serial, patched httpx)

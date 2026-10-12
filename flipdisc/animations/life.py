@@ -6,6 +6,7 @@ import numpy as np
 from scipy.ndimage import convolve
 
 from .base import Animation, register_animation
+from .cadence import Cadence
 
 # Kernel that counts the 8 neighbors of each cell (toroidal wrap)
 _NEIGHBOR_KERNEL = np.array([[1, 1, 1], [1, 0, 1], [1, 1, 1]])
@@ -26,7 +27,7 @@ class Life(Animation):
         self.grid = np.zeros((height, width), dtype=bool)
         self.generation = 0
         self.rate = 20.0  # generations per second
-        self._generation_timer = 0.0
+        self._cadence = Cadence()
 
         self._randomize(density=0.3)
 
@@ -44,14 +45,7 @@ class Life(Animation):
     @override
     def step(self, dt: float) -> None:
         self.current_time += dt
-        if self.rate <= 0:
-            return
-
-        self._generation_timer += dt
-        interval = 1.0 / self.rate
-        # Small tolerance so float error doesn't delay a generation by a frame
-        while self._generation_timer >= interval - 1e-9:
-            self._generation_timer -= interval
+        for _ in range(self._cadence.advance(self.rate, dt)):
             self._update_generation()
 
     @override

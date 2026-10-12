@@ -17,10 +17,12 @@ from . import (
     wireframe_cube,
 )
 from .base import Animation, get_animation, list_animations, register_animation
+from .cadence import Cadence
 from .supersampled import SupersampledAnimation
 
 __all__ = [
     "Animation",
+    "Cadence",
     "SupersampledAnimation",
     "bouncing_dot",
     "clip",

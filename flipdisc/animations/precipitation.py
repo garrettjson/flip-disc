@@ -14,6 +14,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .cadence import Cadence
+
 # Snowflake shapes: tuples of (row, col) offsets from the particle origin.
 # 1-piece single pixel
 _SNOW_1 = ((0, 0),)
@@ -42,8 +44,8 @@ class SnowEffect:
     Spawns snowflake particles from the cloud base that fall straight down.
     Each snowflake is a small 2-3 pixel diagonal/zigzag shape.
 
-    All particles advance exactly 1px at the same time via a shared fall
-    timer, so spacing between snowflakes stays perfectly uniform.
+    All particles advance together on a shared, even cadence (see
+    ``Cadence``), so spacing between snowflakes stays perfectly uniform.
     """
 
     def __init__(
@@ -60,30 +62,23 @@ class SnowEffect:
         self._spawn_rate = spawn_rate
         self._fall_speed = fall_speed
         self._particles: list[SnowParticle] = []
-        self._spawn_timer: float = 0.0
-        self._fall_timer: float = 0.0
+        self._spawn_cadence = Cadence()
+        self._fall_cadence = Cadence()
         self._last_spawn_x: int | None = None
         self._rng = random.Random()
 
     def step(self, dt: float) -> None:
-        # Advance all particles in lockstep: 1px per tick
-        self._fall_timer += dt
-        fall_interval = 1.0 / self._fall_speed
-        while self._fall_timer >= fall_interval:
-            self._fall_timer -= fall_interval
+        # Advance all particles in lockstep
+        fall = self._fall_cadence.advance(self._fall_speed, dt)
+        if fall:
             for p in self._particles:
-                p.y += 1
+                p.y += fall
 
         # Cull off-screen particles
         self._particles = [p for p in self._particles if p.y <= self._max_y + 2]
 
         # Spawn new particles
-        if self._spawn_rate <= 0:
-            return
-        self._spawn_timer += dt
-        interval = 1.0 / self._spawn_rate
-        while self._spawn_timer >= interval:
-            self._spawn_timer -= interval
+        for _ in range(self._spawn_cadence.advance(self._spawn_rate, dt)):
             self._spawn_particle()
 
     def _spawn_particle(self) -> None:
@@ -119,8 +114,8 @@ class SnowEffect:
 
     def reset(self) -> None:
         self._particles.clear()
-        self._spawn_timer = 0.0
-        self._fall_timer = 0.0
+        self._spawn_cadence.reset()
+        self._fall_cadence.reset()
         self._last_spawn_x = None
 
 
@@ -182,8 +177,8 @@ class RainEffect:
     Spawns rain droplets (vertical streaks) from the cloud base that fall
     straight down. Droplet sizes range from 1px to ``droplet_size`` px tall.
 
-    All particles advance exactly 1px at the same time via a shared fall
-    timer, so spacing between droplets stays perfectly uniform.
+    All particles advance together on a shared, even cadence (see
+    ``Cadence``), so spacing between droplets stays perfectly uniform.
     """
 
     def __init__(
@@ -202,30 +197,23 @@ class RainEffect:
         self._fall_speed = fall_speed
         self._droplet_size = max(1, min(3, droplet_size))
         self._particles: list[RainParticle] = []
-        self._spawn_timer: float = 0.0
-        self._fall_timer: float = 0.0
+        self._spawn_cadence = Cadence()
+        self._fall_cadence = Cadence()
         self._last_spawn_x: int | None = None
         self._rng = random.Random()
 
     def step(self, dt: float) -> None:
-        # Advance all particles in lockstep: 1px per tick
-        self._fall_timer += dt
-        fall_interval = 1.0 / self._fall_speed
-        while self._fall_timer >= fall_interval:
-            self._fall_timer -= fall_interval
+        # Advance all particles in lockstep
+        fall = self._fall_cadence.advance(self._fall_speed, dt)
+        if fall:
             for p in self._particles:
-                p.y += 1
+                p.y += fall
 
         # Cull off-screen particles
         self._particles = [p for p in self._particles if p.y <= self._max_y + 2]
 
         # Spawn new particles
-        if self._spawn_rate <= 0:
-            return
-        self._spawn_timer += dt
-        interval = 1.0 / self._spawn_rate
-        while self._spawn_timer >= interval:
-            self._spawn_timer -= interval
+        for _ in range(self._spawn_cadence.advance(self._spawn_rate, dt)):
             self._spawn_particle()
 
     def _spawn_particle(self) -> None:
@@ -265,8 +253,8 @@ class RainEffect:
 
     def reset(self) -> None:
         self._particles.clear()
-        self._spawn_timer = 0.0
-        self._fall_timer = 0.0
+        self._spawn_cadence.reset()
+        self._fall_cadence.reset()
         self._last_spawn_x = None
 
 
@@ -305,7 +293,7 @@ class LightningEffect:
         spawn_y: int,
         max_y: int,
         strike_interval: float = 900.0,
-        leader_speed: float = 13.0,
+        leader_speed: float = 10.0,
         text_row: int | None = None,
         text_max_col: int | None = None,
         display_width: int = 28,
@@ -325,6 +313,7 @@ class LightningEffect:
         self._bolt: dict[int, set[int]] = {}
         self._bolt_max_row: int = max_y
         self._leader_row: float = 0.0
+        self._leader_cadence = Cadence()
         self._first_strike = True
 
     def step(self, dt: float) -> None:
@@ -336,12 +325,13 @@ class LightningEffect:
             if self._timer >= wait:
                 self._bolt = self._generate_bolt()
                 self._leader_row = float(self._spawn_y)
+                self._leader_cadence.reset()
                 self._state = _LightningState.LEADER
                 self._timer = 0.0
                 self._first_strike = False
 
         elif self._state == _LightningState.LEADER:
-            self._leader_row += self._leader_speed * dt
+            self._leader_row += self._leader_cadence.advance(self._leader_speed, dt)
             if self._leader_row >= self._bolt_max_row:
                 self._leader_row = float(self._bolt_max_row)
                 self._state = _LightningState.FLASH_OFF
