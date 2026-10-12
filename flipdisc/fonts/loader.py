@@ -174,3 +174,9 @@ def load_font(name: str, config_path: str = _FONTS_CONFIG) -> "BitmapFont":
     if name not in config:
         raise KeyError(f"Font '{name}' not found in {config_path}")
     return BitmapFont(**config[name])
+
+
+def list_fonts(config_path: str = _FONTS_CONFIG) -> list[str]:
+    """Return names of all fonts defined in the fonts TOML config."""
+    with Path(config_path).open("rb") as f:
+        return list(tomllib.load(f).keys())

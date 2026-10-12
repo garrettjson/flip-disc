@@ -26,8 +26,7 @@ def split_canvas_bits_to_panels(
         )
 
     panels = (
-        canvas_bits
-        .reshape(cfg.rows, cfg.panel_h, cfg.columns, cfg.panel_w)
+        canvas_bits.reshape(cfg.rows, cfg.panel_h, cfg.columns, cfg.panel_w)
         .transpose(0, 2, 1, 3)
         .reshape(-1, cfg.panel_h, cfg.panel_w)
     )

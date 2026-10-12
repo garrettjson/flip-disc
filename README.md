@@ -48,12 +48,12 @@ Endpoints @`http://localhost:8000`:
 Minimum example (works with mock serial):
 ```toml
 [display]
-# Panel grid (each panel is 14x7); default canvas = 28x28
-panel_type = "14x7"     # "7x7", "14x7", or "28x7"
-columns = 2              # horizontal panel count (14*2 = 28)
+# Panel grid (each controller drives a 28x7 strip); default canvas = 28x28
+panel_type = "28x7"     # "7x7", "14x7", or "28x7"
+columns = 1              # horizontal panel count (28*1 = 28)
 rows = 4                 # vertical panel count (7*4 = 28)
 refresh_rate = 20.0      # frames per second paced by the server
-buffer_duration = 0.5    # seconds of frames the buffer can hold
+buffer_duration = 1.0    # seconds of frames the buffer can hold
 # Optional base address for the first panel (panels are addressed row-major)
 address_base = 1
 
@@ -66,7 +66,7 @@ mock = true
 ```
 
 Notes
-- Width = panel_w * columns, height = panel_h * rows. With 14x7 x 2x4 -> 28x28.
+- Width = panel_w * columns, height = panel_h * rows. With 28x7 x 1x4 -> 28x28.
 - 7x7 panels do not support buffered refresh; the controller sends immediate-refresh messages without a flush.
 - 14x7 and 28x7 are sent as buffered messages, then a broadcast flush is issued.
 - address_base sets the starting panel address and increments per panel in row-major order.
@@ -105,52 +105,44 @@ To add a new font, drop a BMP sprite sheet in `assets/text/` and add a matching 
 flip-disc/
 ├─ config.toml                # Example configuration (TOML)
 ├─ pyproject.toml             # Package + tooling (ruff, pytest)
-├─ README.md
+├─ CLAUDE.md                  # Context for coding agents (orientation, gotchas)
+├─ docs/
+│  ├─ architecture.md         # How the implementation works, end to end
+│  └─ hardware.md             # AlfaZeta panel reference (wiring, DIP switches, protocol)
 ├─ assets/
-│  └─ text/
-│     ├─ fonts.toml           # Font registry (parsing params per font)
-│     ├─ standard.bmp         # 5×7 bitmap font sprite sheet (95 glyphs)
-│     └─ compact.bmp          # 3×5 bitmap font sprite sheet
+│  ├─ text/                   # Bitmap font sprite sheets + fonts.toml
+│  ├─ images/weather/         # Weather icon BMPs
+│  └─ clips/clips.toml        # Clip manifest (GIF frame sequences)
 └─ flipdisc/
-   ├─ __main__.py             # `python -m flipdisc`
-   ├─ __init__.py
    ├─ app.py                  # Application orchestrator (wires pipeline + API)
    ├─ cli.py                  # CLI: run-server, preview
    ├─ config.py               # Config loading + validation (TOML)
    ├─ exceptions.py           # Project-wide exception hierarchy
-   ├─ logging_conf.py
-   ├─ engine/                 # Pipeline runtime
-   │  └─ pipeline.py          # DisplayPipeline: generator thread + async presenter
-   ├─ animations/             # Animation plugins
+   ├─ engine/pipeline.py      # DisplayPipeline: generator thread + async presenter
+   ├─ animations/             # Animation classes + registry
    │  ├─ base.py              # Animation ABC, registry, factory
-   │  ├─ bouncing_dot.py
-   │  ├─ life.py
-   │  ├─ pendulum.py
-   │  ├─ simplex_noise.py
-   │  ├─ text.py              # Text animation (static, scroll_left/up/down)
-   │  └─ wireframe_cube.py
-   ├─ fonts/                  # Bitmap font loading
-   │  └─ loader.py            # BitmapFont class + load_font(name) factory
+   │  ├─ supersampled.py      # Base class for anti-aliased rendering
+   │  ├─ composed.py          # Layered compositions
+   │  ├─ text.py, clock.py, analog_clock.py
+   │  ├─ weather.py, weather_icon.py, precipitation.py
+   │  ├─ clip.py, image.py
+   │  └─ bouncing_dot.py, life.py, pendulum.py, simplex_noise.py,
+   │     wireframe_cube.py, fluid.py
+   ├─ fonts/loader.py         # BitmapFont class + load_font(name)
+   ├─ clips/                  # GIF clip loader + importer utilities
+   ├─ services/               # Weather fetch (Open-Meteo), moon phase
    ├─ hardware/               # RS-485 protocol + serial transport
+   │  ├─ PROTOCOL.md          # Wire protocol reference
    │  ├─ spec.py              # Protocol enums, command map, constants
    │  ├─ formats.py           # Low-level encoder (panel msgs + flush)
    │  ├─ protocol.py          # High-level ProtocolEncoder facade
    │  ├─ panel_map.py         # Slice canvas into per-panel bitmaps
    │  └─ serial.py            # Serial transports (hardware + mock)
-   ├─ gfx/                    # Graphics / post-processing
-   │  └─ postprocessing.py    # Binarize, dither, blur, sharpen, threshold
-   ├─ web/                    # HTTP API + Web UI
-   │  ├─ api_server.py        # FastAPI endpoints + WebSocket preview
-   │  ├─ index.html           # Web UI template
-   │  └─ static/              # JS + CSS assets
-   │     ├─ app.js
-   │     └─ styles.css
-   └─ tests/
-      ├─ test_basic.py        # Pipeline + animation smoke tests
-      ├─ test_fonts.py        # Font loading + text rendering tests
-      ├─ test_formats.py      # Golden tests for protocol encoding
-      ├─ test_pacing.py       # Frame pacing smoke test
-      └─ test_text_animation.py
+   ├─ gfx/
+   │  ├─ postprocessing.py    # Binarize, dither, blur, sharpen, threshold, downsample
+   │  └─ terminal.py          # Print frames in the terminal for debugging
+   ├─ web/                    # FastAPI endpoints, WebSocket preview, web UI
+   └─ tests/                  # pytest tests
 ```
 
 
@@ -209,13 +201,15 @@ Tips
 - NumPy releases the GIL during array operations, so the background thread provides real concurrency for compute-heavy animations.
 
 
-## API (selected)
+## API
 
 - GET `/status`: pipeline status (running, playing, frames_presented, buffer_capacity)
-- GET `/animations` -> { animations }
-- POST `/anim/{name}` -> start animation
+- GET `/animations`: animation names plus each one's parameter schema; `/fonts`, `/clips`, `/images`: available names
+- POST `/anim/{name}` (JSON body = params) -> start or switch animation (400 if a parameter is unknown or invalid)
 - POST `/animations/configure` -> set params on current animation
-- POST `/animations/reset`
+- POST `/animations/reset`, POST `/animations/stop`
 - GET `/fps` -> { refresh_rate }
-- POST `/fps?new_fps=20` -> update refresh rate atomically
+- POST `/fps?new_fps=20` -> update refresh rate
 - POST `/serial/reconnect`
+- GET/POST `/weather/config`, POST `/weather/refresh` -> background weather fetch for the `weather` animation
+- WS `/ws/preview` -> live frames; GET `/ui` -> web UI

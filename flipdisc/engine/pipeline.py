@@ -21,9 +21,9 @@ from typing import Any
 
 import numpy as np
 
-from flipdisc.animations import get_animation
+from flipdisc.animations import Animation, get_animation, validate_params
 from flipdisc.config import DisplayConfig
-from flipdisc.exceptions import HardwareError
+from flipdisc.exceptions import AnimationError, HardwareError, SerialConnectionError
 from flipdisc.gfx.postprocessing import apply_processing_pipeline
 from flipdisc.hardware.panel_map import split_canvas_bits_to_panels
 from flipdisc.hardware.protocol import ProtocolEncoder
@@ -38,6 +38,8 @@ class PipelineStatus:
     playing: bool
     frames_presented: int
     buffer_capacity: int
+    animation: str | None = None
+    last_error: str | None = None
 
 
 class DisplayPipeline:
@@ -57,10 +59,17 @@ class DisplayPipeline:
         self._stop_event = threading.Event()
         self._play_event = threading.Event()
 
-        # Animation switch / configure requests (main thread -> generator thread)
-        self._anim_request: tuple[str, dict[str, Any]] | None = None
-        self._configure_request: dict[str, Any] | None = None
-        self._reset_requested = False
+        # Control requests (main thread -> generator thread), applied in order.
+        # Each is a (kind, payload) pair; kind is "switch", "configure" or "reset".
+        self._requests: queue.SimpleQueue[tuple[str, Any]] = queue.SimpleQueue()
+
+        # The animation most recently asked for; params are validated against
+        # its schema before a request is queued
+        self._requested_animation: str | None = None
+
+        # Written by the generator thread, read by get_status()
+        self._current_animation: str | None = None
+        self._last_error: tuple[str, str] | None = None
 
         # Generator thread
         self._gen_thread: threading.Thread | None = None
@@ -123,48 +132,83 @@ class DisplayPipeline:
             except queue.Full:
                 continue
 
-    def _generator_loop(self, animation_name: str, params: dict[str, Any]) -> None:
+    def _apply_request(
+        self, anim: Animation | None, kind: str, payload: Any
+    ) -> Animation | None:
+        """Apply one control request and return the animation to keep running."""
+        if kind == "switch":
+            name, params = payload
+            new_anim = get_animation(name, self.cfg.width, self.cfg.height)
+            if params:
+                new_anim.configure(**params)
+            # Only drop queued frames once the replacement is known to work
+            self._drain_queue()
+            self._current_animation = name
+            return new_anim
+
+        if anim is None:
+            raise AnimationError(f"No animation is running to {kind}")
+        if kind == "configure":
+            anim.configure(**payload)
+        elif kind == "reset":
+            anim.reset()
+        return anim
+
+    def _process_requests(self, anim: Animation | None) -> Animation | None:
+        """Apply all pending requests; a failed one leaves the animation as it was."""
+        while True:
+            try:
+                kind, payload = self._requests.get_nowait()
+            except queue.Empty:
+                return anim
+
+            try:
+                anim = self._apply_request(anim, kind, payload)
+            except Exception as e:
+                # Crash barrier: animation code can raise anything
+                logger.exception(f"Animation {kind} request failed")
+                self._last_error = (kind, f"{kind} failed: {e}")
+                continue
+
+            # A new animation is a clean slate; otherwise a success only
+            # clears an earlier failure of the same kind
+            if kind == "switch" or (self._last_error and self._last_error[0] == kind):
+                self._last_error = None
+
+    def _generator_loop(self) -> None:
         """Background thread: step animation, apply post-processing, enqueue frames."""
         try:
-            anim = get_animation(animation_name, self.cfg.width, self.cfg.height)
-            if params:
-                anim.configure(**params)
-
-            sim_dt = 1.0 / 60.0
+            anim: Animation | None = None
 
             while not self._stop_event.is_set():
+                anim = self._process_requests(anim)
+
                 # Wait for play
                 if not self._play_event.is_set():
                     self._play_event.wait(timeout=0.05)
                     continue
 
-                # Check animation switch request
-                req = self._anim_request
-                if req is not None:
-                    self._anim_request = None
-                    name, new_params = req
-                    self._drain_queue()
-                    anim = get_animation(name, self.cfg.width, self.cfg.height)
-                    if new_params:
-                        anim.configure(**new_params)
+                # Nothing to run until a switch request succeeds
+                if anim is None:
+                    self._stop_event.wait(timeout=0.05)
+                    continue
 
-                # Check configure request (update params in place)
-                cfg_req = self._configure_request
-                if cfg_req is not None:
-                    self._configure_request = None
-                    anim.configure(**cfg_req)
-
-                # Check reset request
-                if self._reset_requested:
-                    self._reset_requested = False
-                    anim.reset()
-
-                # Step simulation
-                anim.step(sim_dt)
-                gray_frame = anim.render_gray()
-
-                # Apply processing pipeline
-                processed = apply_processing_pipeline(gray_frame, anim.processing_steps)
+                try:
+                    # One frame of animation per frame of display time
+                    anim.step(self.frame_interval)
+                    gray_frame = anim.render_gray()
+                    processed = apply_processing_pipeline(
+                        gray_frame, anim.processing_steps
+                    )
+                except Exception as e:
+                    # Crash barrier: drop the broken animation, keep the thread
+                    logger.exception(
+                        f"Animation '{self._current_animation}' failed while running"
+                    )
+                    self._last_error = ("run", f"{self._current_animation} failed: {e}")
+                    self._current_animation = None
+                    anim = None
+                    continue
 
                 self._put_frame(processed)
         except Exception:
@@ -185,17 +229,29 @@ class DisplayPipeline:
                 except queue.Empty:
                     frame = None
 
-                if frame is not None:
+                if frame is None:
+                    sleep_time = max(0.0, next_deadline - loop.time())
+                    if sleep_time > 0:
+                        await asyncio.sleep(sleep_time)
+                    continue
+
+                # Skip serial write if the frame is identical to the last
+                # one sent — avoids pulsing the mechanical display needlessly.
+                changed = self._last_frame is None or not np.array_equal(
+                    frame, self._last_frame
+                )
+
+                if changed:
                     panel_bits_list = split_canvas_bits_to_panels(frame, self.cfg)
                     addr_base = self.cfg.address_base
                     batch = self.encoder.encode_batch(panel_bits_list, addr_base)
                     await self.serial.write_frames([batch])
-
                     self._last_frame = frame.copy()
-                    if self._preview_queue is not None:
-                        with contextlib.suppress(asyncio.QueueFull):
-                            self._preview_queue.put_nowait(frame.copy())
                     self._presented += 1
+
+                if self._preview_queue is not None:
+                    with contextlib.suppress(asyncio.QueueFull):
+                        self._preview_queue.put_nowait(frame.copy())
 
                 # Sleep until next deadline
                 sleep_time = max(0.0, next_deadline - loop.time())
@@ -211,16 +267,18 @@ class DisplayPipeline:
     async def start(
         self, animation: str = "bouncing_dot", params: dict[str, Any] | None = None
     ) -> None:
-        if params is None:
-            params = {}
+        params = validate_params(animation, params or {})
+        self._requested_animation = animation
         await self.serial.connect()
         self._running = True
 
-        # Start generator thread
+        # Start generator thread with the initial animation as its first request
         self._stop_event.clear()
+        self._requests = queue.SimpleQueue()
+        self._requests.put(("switch", (animation, params)))
+        self._last_error = None
         self._gen_thread = threading.Thread(
             target=self._generator_loop,
-            args=(animation, params),
             name="GeneratorThread",
             daemon=True,
         )
@@ -251,7 +309,7 @@ class DisplayPipeline:
                 await self._preview_task
 
         # Disconnect serial
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(SerialConnectionError, OSError):
             await self.serial.disconnect()
 
     async def play(self) -> None:
@@ -263,7 +321,7 @@ class DisplayPipeline:
         self._play_event.clear()
 
     async def reset(self) -> None:
-        self._reset_requested = True
+        self._requests.put(("reset", None))
 
     def get_status(self) -> PipelineStatus:
         return PipelineStatus(
@@ -271,6 +329,8 @@ class DisplayPipeline:
             playing=self._playing,
             frames_presented=self._presented,
             buffer_capacity=self._buffer_capacity,
+            animation=self._current_animation,
+            last_error=self._last_error[1] if self._last_error else None,
         )
 
     def get_last_frame_bits(self) -> np.ndarray | None:
@@ -283,18 +343,30 @@ class DisplayPipeline:
         self.frame_interval = 1.0 / new_fps
 
     async def reconnect_serial(self) -> None:
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(SerialConnectionError, OSError):
             await self.serial.disconnect()
         await self.serial.connect()
 
     async def set_animation(
         self, name: str, params: dict[str, Any] | None = None
     ) -> None:
-        """Switch animation — generator thread picks up the request atomically."""
-        if params is None:
-            params = {}
-        self._anim_request = (name, params)
+        """Switch animation — the generator thread applies it on its next iteration.
+
+        Raises AnimationError for an unknown name or invalid params. A failure
+        while building or configuring the new animation keeps the current one
+        running and is reported through get_status().last_error.
+        """
+        params = validate_params(name, params or {})
+        self._requested_animation = name
+        self._requests.put(("switch", (name, params)))
 
     async def configure_animation(self, params: dict[str, Any]) -> None:
-        """Update params on the running animation without restarting it."""
-        self._configure_request = params
+        """Update params on the running animation without restarting it.
+
+        Raises AnimationError if the params don't fit the schema of the
+        animation most recently requested.
+        """
+        if self._requested_animation is None:
+            raise AnimationError("No animation has been started")
+        params = validate_params(self._requested_animation, params)
+        self._requests.put(("configure", params))

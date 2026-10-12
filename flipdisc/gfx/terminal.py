@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from flipdisc.gfx.postprocessing import apply_processing_pipeline
+
 
 def print_frame(
     frame: np.ndarray,
@@ -29,10 +31,7 @@ def print_frame(
 
     h, w = frame.shape
 
-    if np.issubdtype(frame.dtype, np.bool_):
-        bits = frame
-    else:
-        bits = frame >= threshold
+    bits = frame if np.issubdtype(frame.dtype, np.bool_) else frame >= threshold
 
     border = "─" * w
     print(f"{label}  [{w}×{h}]" if label else f"[{w}×{h}]")
@@ -62,8 +61,6 @@ def print_animation_frames(
         apply_processing:  If True, run animation.processing_steps on each frame.
         **frame_kwargs:    Forwarded to print_frame (on, off, threshold).
     """
-    from flipdisc.gfx.postprocessing import apply_processing_pipeline
-
     for i in range(n):
         animation.step(dt)
         frame = animation.render_gray()

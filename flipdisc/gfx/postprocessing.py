@@ -28,6 +28,29 @@ def threshold(frame: np.ndarray, low: float = 0.3, high: float = 0.7) -> np.ndar
     return np.select([frame < low, frame > high], [0.0, 1.0], default=frame)
 
 
+def downsample(frame: np.ndarray, factor: int) -> np.ndarray:
+    """Block-average a hi-res frame down by an integer factor.
+
+    Reshapes into (H, factor, W, factor) blocks and averages, producing
+    smooth grayscale anti-aliased output from binary hi-res renders.
+
+    Args:
+        frame: (H, W) array where H and W are divisible by factor.
+        factor: Integer downsampling factor (e.g. 4 or 8).
+
+    Returns:
+        (H/factor, W/factor) float32 array with values in [0, 1].
+    """
+    if factor == 1:
+        return frame
+    h, w = frame.shape
+    if h % factor != 0 or w % factor != 0:
+        raise ValueError(
+            f"Frame dimensions ({h}, {w}) must be divisible by factor {factor}"
+        )
+    return frame.reshape(h // factor, factor, w // factor, factor).mean(axis=(1, 3))
+
+
 PROCESSING_FUNCTIONS = {
     "binarize": binarize,
     "dither": dither,

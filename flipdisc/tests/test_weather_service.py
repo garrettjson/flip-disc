@@ -33,22 +33,35 @@ class TestWmoMapping:
 
     def test_thunderstorm_codes(self):
         for code in [95, 96, 99]:
-            assert WMO_TO_CONDITION[code] == "thunderstorm", f"Code {code} should be thunderstorm"
+            assert WMO_TO_CONDITION[code] == "thunderstorm", (
+                f"Code {code} should be thunderstorm"
+            )
 
     def test_all_values_are_valid_conditions(self):
-        valid = {"sunny", "partly_cloudy", "cloudy", "fog", "rain", "snow", "thunderstorm"}
+        valid = {
+            "sunny",
+            "partly_cloudy",
+            "cloudy",
+            "fog",
+            "rain",
+            "snow",
+            "thunderstorm",
+        }
         for code, cond in WMO_TO_CONDITION.items():
             assert cond in valid, f"Code {code} maps to unknown condition {cond!r}"
 
 
 class TestFetchWeather:
-    def _make_mock_response(self, temp: float, weathercode: int) -> MagicMock:
+    def _make_mock_response(
+        self, temp: float, weathercode: int, is_day: int = 1
+    ) -> MagicMock:
         resp = MagicMock()
         resp.raise_for_status = MagicMock()
         resp.json.return_value = {
             "current_weather": {
                 "temperature": temp,
                 "weathercode": weathercode,
+                "is_day": is_day,
             }
         }
         return resp
@@ -114,3 +127,46 @@ class TestFetchWeather:
         call_kwargs = mock_client.get.call_args
         params = call_kwargs[1]["params"]
         assert params["temperature_unit"] == "fahrenheit"
+
+    def test_clear_night_includes_moon_phase(self):
+        mock_resp = self._make_mock_response(55.0, 0, is_day=0)
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_resp
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("flipdisc.services.weather.httpx.AsyncClient", return_value=mock_cm):
+            data = self._run(fetch_weather(37.77, -122.41, unit="F"))
+
+        assert data.condition == "moon"
+        assert data.moon_phase is not None
+        assert 0.0 <= data.moon_phase < 1.0
+
+    def test_daytime_has_no_moon_phase(self):
+        mock_resp = self._make_mock_response(72.0, 0, is_day=1)
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_resp
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("flipdisc.services.weather.httpx.AsyncClient", return_value=mock_cm):
+            data = self._run(fetch_weather(37.77, -122.41, unit="F"))
+
+        assert data.condition == "sunny"
+        assert data.moon_phase is None
+
+    def test_fetch_includes_wmo_code(self):
+        mock_resp = self._make_mock_response(55.0, 65)
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_resp
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("flipdisc.services.weather.httpx.AsyncClient", return_value=mock_cm):
+            data = self._run(fetch_weather(37.77, -122.41, unit="F"))
+
+        assert data.wmo_code == 65
+        assert data.condition == "rain"

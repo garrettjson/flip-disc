@@ -58,7 +58,7 @@ class HardwareSerialTransport(SerialTransport):
                 try:
                     self._serial.close()
                     logger.info("Disconnected from hardware serial port")
-                except Exception as e:
+                except (SerialException, OSError) as e:
                     raise SerialConnectionError(
                         f"Hardware serial disconnect failed: {e}"
                     ) from e
@@ -78,7 +78,9 @@ class HardwareSerialTransport(SerialTransport):
                     raise SerialConnectionError(
                         f"Short write: {written}/{len(frame)} bytes"
                     )
-        except Exception as e:
+        except SerialConnectionError:
+            raise
+        except (SerialException, OSError) as e:
             raise SerialConnectionError(f"Hardware write failed: {e}") from e
 
 

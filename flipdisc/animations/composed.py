@@ -9,14 +9,19 @@ register with @register_animation. The API then starts it by name::
             super().__init__(width, height)
             temp = TextAnimation(41, 7)
             temp.configure(text="--", mode="static")
-            self.compose([
-                (temp, {"id": "temp", "x": 15, "y": 0}),
-            ])
+            self.compose(
+                [
+                    (temp, {"id": "temp", "x": 15, "y": 0}),
+                ]
+            )
 
-        def configure(self, **params):
-            if "temp" in params:
+        PARAMS = (Param("temp", int, None, nullable=True),)
+
+        def on_configure(self, **params):
+            if params.get("temp") is not None:
                 self._update_layer("temp", {"text": str(params["temp"]) + "F"})
-            super().configure(**params)
+            super().on_configure(**params)
+
 
     # API: POST /anim/weather_dashboard {"temp": 72}
 """
@@ -24,21 +29,34 @@ register with @register_animation. The API then starts it by name::
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, override
 
 import numpy as np
 
+from flipdisc.exceptions import AnimationError
 from flipdisc.gfx.postprocessing import apply_processing_pipeline
 
-from .base import Animation, get_animation, register_animation
+from .base import Animation, get_animation, register_animation, validate_params
+from .params import Param
 
 # Layer fields managed directly on _Layer (not forwarded to sub-animation)
-_LAYER_FIELDS = {"blend", "visible"}
+_LAYER_FIELDS = {
+    "blend": Param("blend", str, "over", choices=("over", "add")),
+    "visible": Param("visible", bool, True),
+}
 
 
-def _blit_region(
-    canvas: np.ndarray, src: np.ndarray, x: int, y: int
-) -> None:
+def _validate_layer_spec(spec: Any) -> None:
+    """Check one entry of a ``layers`` list: shape, animation type, and params."""
+    if not isinstance(spec, dict) or "id" not in spec or "type" not in spec:
+        raise AnimationError(f"Each layer needs an 'id' and a 'type', got {spec!r}")
+    validate_params(str(spec["type"]), spec.get("params") or {})
+    for name, param in _LAYER_FIELDS.items():
+        if name in spec:
+            param.coerce(spec[name])
+
+
+def _blit_region(canvas: np.ndarray, src: np.ndarray, x: int, y: int) -> None:
     """Blit ``src`` onto ``canvas`` at (x, y) using "over" mode, clipping to bounds."""
     ch, cw = canvas.shape
     sh, sw = src.shape
@@ -62,7 +80,7 @@ class _Layer:
     y: int
     width: int
     height: int
-    blend: str = field(default="over")   # "over" | "add"
+    blend: str = field(default="over")  # "over" | "add"
     visible: bool = field(default=True)
 
 
@@ -74,23 +92,40 @@ class ComposedAnimation(Animation):
 
     **API / one-off use**: pass a ``layers`` list in configure params::
 
-        POST /anim/composed
+        POST / anim / composed
         {
-          "layers": [
-            {"id": "rain", "type": "clip",  "x": 0,  "y": 0, "width": 14, "height": 7,
-             "params": {"name": "rain", "loop": true}},
-            {"id": "temp", "type": "text",  "x": 15, "y": 0, "width": 41, "height": 7,
-             "params": {"text": "72F", "mode": "static", "font": "compact"}}
-          ]
+            "layers": [
+                {
+                    "id": "rain",
+                    "type": "clip",
+                    "x": 0,
+                    "y": 0,
+                    "width": 14,
+                    "height": 7,
+                    "params": {"name": "rain", "loop": true},
+                },
+                {
+                    "id": "temp",
+                    "type": "text",
+                    "x": 15,
+                    "y": 0,
+                    "width": 41,
+                    "height": 7,
+                    "params": {"text": "72F", "mode": "static", "font": "compact"},
+                },
+            ]
         }
 
     Live updates (no restart needed)::
 
-        POST /animations/configure
+        POST / animations / configure
         {"layer.temp.text": "68F"}
         {"layer.rain.visible": false}
         {"layer.noise.blend": "add"}
     """
+
+    # Subclasses that wire their layers in __init__ replace this with their own
+    PARAMS = (Param("layers", list, None, nullable=True),)
 
     def __init__(self, width: int, height: int):
         super().__init__(width, height, processing_steps=None)
@@ -130,27 +165,46 @@ class ComposedAnimation(Animation):
             )
         self._layers = built
 
-    def configure(self, **params: Any) -> None:
-        super().configure(**params)
+    @classmethod
+    @override
+    def validate_params(cls, params: dict[str, Any]) -> dict[str, Any]:
+        """Validate declared params; pass ``layer.<id>.<key>`` keys through.
 
-        if "layers" in params:
+        Dotted keys target a layer that only exists on an instance, so they
+        are checked against that layer's own schema when they are applied.
+        """
+        dotted = {k: v for k, v in params.items() if k.startswith("layer.")}
+        clean = super().validate_params(
+            {k: v for k, v in params.items() if k not in dotted}
+        )
+        for spec in clean.get("layers") or []:
+            _validate_layer_spec(spec)
+        return {**clean, **dotted}
+
+    @override
+    def on_configure(self, **params: Any) -> None:
+        if params.get("layers") is not None:
             self._build_layers(params["layers"])
 
         for key, val in params.items():
-            if key.startswith("layer."):
-                parts = key.split(".", 2)
-                if len(parts) == 3:
-                    _, layer_id, subkey = parts
-                    if subkey in _LAYER_FIELDS:
-                        self._set_layer_field(layer_id, subkey, val)
-                    else:
-                        self._update_layer(layer_id, {subkey: val})
+            if not key.startswith("layer."):
+                continue
+            parts = key.split(".", 2)
+            if len(parts) != 3:
+                continue
+            _, layer_id, subkey = parts
+            if subkey in _LAYER_FIELDS:
+                self._set_layer_field(layer_id, subkey, val)
+            else:
+                self._update_layer(layer_id, {subkey: val})
 
+    @override
     def step(self, dt: float) -> None:
         self.current_time += dt
         for layer in self._layers:
             layer.anim.step(dt)
 
+    @override
     def render_gray(self) -> np.ndarray:
         canvas = np.zeros((self.height, self.width), dtype=np.float32)
         for layer in self._layers:
@@ -161,11 +215,14 @@ class ComposedAnimation(Animation):
             ).astype(np.float32)
 
             # Clip destination and source regions to canvas bounds once
-            dy0 = max(0, layer.y);  dx0 = max(0, layer.x)
+            dy0 = max(0, layer.y)
+            dx0 = max(0, layer.x)
             dy1 = min(self.height, layer.y + layer.height)
-            dx1 = min(self.width,  layer.x + layer.width)
-            sy0 = dy0 - layer.y;    sx0 = dx0 - layer.x
-            sy1 = sy0 + (dy1 - dy0); sx1 = sx0 + (dx1 - dx0)
+            dx1 = min(self.width, layer.x + layer.width)
+            sy0 = dy0 - layer.y
+            sx0 = dx0 - layer.x
+            sy1 = sy0 + (dy1 - dy0)
+            sx1 = sx0 + (dx1 - dx0)
 
             if dy0 >= dy1 or dx0 >= dx1:
                 continue
@@ -179,6 +236,7 @@ class ComposedAnimation(Animation):
 
         return canvas
 
+    @override
     def reset(self, seed: int | None = None) -> None:
         super().reset(seed)
         for layer in self._layers:
@@ -211,6 +269,5 @@ class ComposedAnimation(Animation):
         """Set a layout field (blend, visible) directly on the _Layer."""
         for layer in self._layers:
             if layer.id == layer_id:
-                current = getattr(layer, field)
-                setattr(layer, field, type(current)(val))
+                setattr(layer, field, _LAYER_FIELDS[field].coerce(val))
                 return

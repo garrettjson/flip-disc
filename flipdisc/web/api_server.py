@@ -10,17 +10,24 @@ import tomllib
 from pathlib import Path
 from typing import Annotated
 
+import httpx
 import uvicorn
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from flipdisc.animations import animation_schemas
 from flipdisc.animations import list_animations as list_animation_names
+from flipdisc.clips.loader import _CLIPS_CONFIG, list_clips
 from flipdisc.config import DisplayConfig
 from flipdisc.engine.pipeline import DisplayPipeline
-from flipdisc.exceptions import AnimationError
-from flipdisc.clips.loader import _CLIPS_CONFIG, list_clips
-from flipdisc.fonts.loader import _FONTS_CONFIG
+from flipdisc.exceptions import (
+    AnimationError,
+    FlipDiscError,
+    HardwareError,
+    SerialConnectionError,
+)
+from flipdisc.fonts.loader import list_fonts as list_font_names
 from flipdisc.services.weather import WeatherData, fetch_weather
 
 logger = logging.getLogger(__name__)
@@ -62,43 +69,37 @@ class ApiServer:
 
         @self.app.get("/status")
         async def status():
-            try:
-                st = self.pipeline.get_status()
-
-                return {
-                    "pipeline": {
-                        "running": st.running,
-                        "playing": st.playing,
-                        "frames_presented": st.frames_presented,
-                        "buffer_capacity": st.buffer_capacity,
-                        "serial_connected": self.pipeline.serial.is_connected(),
-                    },
-                    "config": {
-                        "width": self.config.width,
-                        "height": self.config.height,
-                        "refresh_rate": self.config.refresh_rate,
-                    },
-                }
-            except Exception as e:
-                logger.error(f"Error getting status: {e}")
-                raise HTTPException(500, f"Status error: {e}") from e
+            st = self.pipeline.get_status()
+            return {
+                "pipeline": {
+                    "running": st.running,
+                    "playing": st.playing,
+                    "frames_presented": st.frames_presented,
+                    "buffer_capacity": st.buffer_capacity,
+                    "animation": st.animation,
+                    "last_error": st.last_error,
+                    "serial_connected": self.pipeline.serial.is_connected(),
+                },
+                "config": {
+                    "width": self.config.width,
+                    "height": self.config.height,
+                    "refresh_rate": self.config.refresh_rate,
+                },
+            }
 
         @self.app.get("/animations")
         async def list_animations_route():
-            try:
-                animations = list_animation_names()
-                return {"animations": animations}
-            except Exception as e:
-                logger.error(f"Error listing animations: {e}")
-                raise HTTPException(500, f"Failed to list animations: {e}") from e
+            return {
+                "animations": list_animation_names(),
+                # name -> list of parameter descriptions (see animations/params.py)
+                "params": animation_schemas(),
+            }
 
         @self.app.get("/fonts")
         async def list_fonts():
             try:
-                with Path(_FONTS_CONFIG).open("rb") as f:
-                    config = tomllib.load(f)
-                return {"fonts": list(config.keys())}
-            except Exception as e:
+                return {"fonts": list_font_names()}
+            except (tomllib.TOMLDecodeError, OSError) as e:
                 logger.error(f"Error listing fonts: {e}")
                 raise HTTPException(500, f"Failed to list fonts: {e}") from e
 
@@ -106,7 +107,7 @@ class ApiServer:
         async def list_clips_route():
             try:
                 return {"clips": list_clips(_CLIPS_CONFIG)}
-            except Exception as e:
+            except (OSError, ValueError) as e:
                 logger.error(f"Error listing clips: {e}")
                 raise HTTPException(500, f"Failed to list clips: {e}") from e
 
@@ -120,7 +121,7 @@ class ApiServer:
                     else []
                 )
                 return {"images": names}
-            except Exception as e:
+            except OSError as e:
                 logger.error(f"Error listing images: {e}")
                 raise HTTPException(500, f"Failed to list images: {e}") from e
 
@@ -139,27 +140,19 @@ class ApiServer:
             except AnimationError as e:
                 logger.error(f"Animation configuration error: {e}")
                 raise HTTPException(400, str(e)) from e
-            except Exception as e:
+            except FlipDiscError as e:
                 logger.error(f"Unexpected error configuring animation: {e}")
                 raise HTTPException(500, f"Failed to configure animation: {e}") from e
 
         @self.app.post("/animations/reset")
         async def reset_animation():
-            try:
-                await self.pipeline.reset()
-                return {"message": "Animation reset"}
-            except Exception as e:
-                logger.error(f"Error resetting animation: {e}")
-                raise HTTPException(500, f"Failed to reset animation: {e}") from e
+            await self.pipeline.reset()
+            return {"message": "Animation reset"}
 
         @self.app.post("/animations/stop")
         async def stop_animation():
-            try:
-                await self.pipeline.pause()
-                return {"message": "Animation stopped"}
-            except Exception as e:
-                logger.error(f"Error stopping animation: {e}")
-                raise HTTPException(500, f"Failed to stop animation: {e}") from e
+            await self.pipeline.pause()
+            return {"message": "Animation stopped"}
 
         @self.app.post("/anim/{name}")
         async def start_animation(
@@ -176,7 +169,7 @@ class ApiServer:
             except AnimationError as e:
                 logger.error(f"Animation error: {e}")
                 raise HTTPException(400, str(e)) from e
-            except Exception as e:
+            except FlipDiscError as e:
                 logger.error(f"Unexpected error starting animation: {e}")
                 raise HTTPException(500, f"Failed to start animation: {e}") from e
 
@@ -189,7 +182,7 @@ class ApiServer:
             try:
                 await self.pipeline.set_refresh_rate(new_fps)
                 return {"message": "Refresh rate updated", "refresh_rate": new_fps}
-            except Exception as e:
+            except (HardwareError, ValueError) as e:
                 logger.error(f"Error setting refresh rate: {e}")
                 raise HTTPException(400, f"Failed to set refresh rate: {e}") from e
 
@@ -198,7 +191,7 @@ class ApiServer:
             try:
                 await self.pipeline.reconnect_serial()
                 return {"message": "Serial reconnected"}
-            except Exception as e:
+            except (SerialConnectionError, OSError) as e:
                 logger.error(f"Error reconnecting serial: {e}")
                 raise HTTPException(500, f"Failed to reconnect serial: {e}") from e
 
@@ -231,7 +224,8 @@ class ApiServer:
 
                 if self._weather_lat is None or self._weather_lon is None:
                     raise HTTPException(
-                        400, "latitude and longitude are required to start weather fetch"
+                        400,
+                        "latitude and longitude are required to start weather fetch",
                     )
                 self._restart_weather_loop()
                 return {
@@ -243,7 +237,7 @@ class ApiServer:
                 }
             except HTTPException:
                 raise
-            except Exception as e:
+            except (ValueError, TypeError) as e:
                 logger.error(f"Error setting weather config: {e}")
                 raise HTTPException(500, f"Failed to set weather config: {e}") from e
 
@@ -251,28 +245,26 @@ class ApiServer:
         async def weather_refresh():
             try:
                 if self._weather_lat is None or self._weather_lon is None:
-                    raise HTTPException(400, "Weather not configured — POST /weather/config first")
+                    raise HTTPException(
+                        400, "Weather not configured — POST /weather/config first"
+                    )
                 data = await fetch_weather(
                     self._weather_lat,
                     self._weather_lon,
                     unit=self._weather_unit,
                 )
-                if self.pipeline.get_status().running:
-                    await self.pipeline.configure_animation(
-                        {
-                            "temp": round(data.temp),
-                            "condition": data.condition,
-                            "unit": data.unit,
-                        }
-                    )
+                await self._push_weather(data)
                 return {
                     "temp": round(data.temp),
                     "condition": data.condition,
                     "unit": data.unit,
+                    "wmo_code": data.wmo_code,
+                    "moon_phase": data.moon_phase,
+                    "sun_progress": data.sun_progress,
                 }
             except HTTPException:
                 raise
-            except Exception as e:
+            except (httpx.HTTPError, KeyError, ValueError, FlipDiscError) as e:
                 logger.error(f"Error refreshing weather: {e}")
                 raise HTTPException(500, f"Failed to refresh weather: {e}") from e
 
@@ -321,11 +313,11 @@ class ApiServer:
 
             except WebSocketDisconnect:
                 logger.debug("Preview WebSocket client disconnected")
-            except Exception as e:
+            except (OSError, RuntimeError) as e:
                 logger.error(f"Preview WebSocket error: {e}")
             finally:
                 receive_task.cancel()
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect):
                     await receive_task
                 self.pipeline.set_preview_callback(None)
 
@@ -341,6 +333,24 @@ class ApiServer:
     # Weather background loop
     # ------------------------------------------------------------------
 
+    async def _push_weather(self, data: WeatherData) -> bool:
+        """Send fetched weather to the weather animation, if that's what is showing."""
+        if self.pipeline.get_status().animation != "weather":
+            return False
+
+        conf = {
+            "temp": round(data.temp),
+            "condition": data.condition,
+            "unit": data.unit,
+            "wmo_code": data.wmo_code,
+        }
+        if data.moon_phase is not None:
+            conf["moon_phase"] = data.moon_phase
+        if data.sun_progress is not None:
+            conf["sun_progress"] = data.sun_progress
+        await self.pipeline.configure_animation(conf)
+        return True
+
     async def _weather_loop(self) -> None:
         """Periodically fetch weather and push to the running animation."""
         while True:
@@ -350,18 +360,11 @@ class ApiServer:
                     self._weather_lon,  # type: ignore[arg-type]
                     unit=self._weather_unit,
                 )
-                if self.pipeline.get_status().running:
-                    await self.pipeline.configure_animation(
-                        {
-                            "temp": round(data.temp),
-                            "condition": data.condition,
-                            "unit": data.unit,
-                        }
-                    )
+                if await self._push_weather(data):
                     logger.info(
                         f"Weather updated: {data.temp}{data.unit} {data.condition}"
                     )
-            except Exception as e:
+            except (httpx.HTTPError, KeyError, ValueError, FlipDiscError) as e:
                 logger.warning(f"Weather fetch failed: {e}")
             await asyncio.sleep(self._weather_interval)
 

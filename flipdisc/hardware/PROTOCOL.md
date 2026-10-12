@@ -1,5 +1,7 @@
 # Flipdots Display Control Protocols
 
+Transcription of AlfaZeta's protocol sheet. For wiring, DIP switches, power, refresh limits, and how this project uses the protocol, see `docs/hardware.md`.
+
 Notation in this document uses width × height. Panels are 7 pixels tall (height = 7), with widths of 7, 14, or 28.
 
 Flipdots display control protocols   - August 2018

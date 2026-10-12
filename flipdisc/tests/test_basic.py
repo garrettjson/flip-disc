@@ -25,7 +25,7 @@ async def _async_test_pipeline_basic():
 
 
 async def _async_test_animations_direct():
-    config = DisplayConfig(columns=2, rows=2)  # 28x14
+    config = DisplayConfig(rows=2)  # 28x14
     names = list_animations()
     assert len(names) > 0
     for name in names:

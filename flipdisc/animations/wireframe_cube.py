@@ -1,10 +1,13 @@
 """Rotating 3D wireframe cube animation."""
 
 import math
+from typing import override
 
 import numpy as np
 
-from .base import Animation, register_animation
+from .base import register_animation
+from .params import Param
+from .supersampled import SupersampledAnimation
 
 # Unit cube vertices centered at origin
 _VERTICES = np.array(
@@ -51,75 +54,15 @@ def _rotation_matrix(angle_x: float, angle_y: float, angle_z: float) -> np.ndarr
     return rz @ ry @ rx
 
 
-@register_animation("wireframe_cube")
-class WireframeCube(Animation):
-    """Rotating 3D wireframe cube, oldschool demoscene style."""
-
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=("binarize",))
-
-        self.size = 0.35  # cube size as fraction of display
-        self.rotation_speed = 1.0  # radians per second
-        self.axis_x = 1.0  # rotation weight per axis
-        self.axis_y = 0.7
-        self.axis_z = 0.3
-
-        self.angle = 0.0
-
-    def configure(self, **params):
-        super().configure(**params)
-
-        if "size" in params:
-            self.size = max(0.1, min(0.5, float(params["size"])))
-        if "rotation_speed" in params:
-            self.rotation_speed = float(params["rotation_speed"])
-        if "axis_x" in params:
-            self.axis_x = float(params["axis_x"])
-        if "axis_y" in params:
-            self.axis_y = float(params["axis_y"])
-        if "axis_z" in params:
-            self.axis_z = float(params["axis_z"])
-
-    def step(self, dt: float) -> None:
-        self.current_time += dt
-        self.angle += self.rotation_speed * dt
-
-    def render_gray(self) -> np.ndarray:
-        frame = np.zeros((self.height, self.width), dtype=np.float32)
-
-        # Rotate vertices
-        rot = _rotation_matrix(
-            self.angle * self.axis_x,
-            self.angle * self.axis_y,
-            self.angle * self.axis_z,
-        )
-        rotated = _VERTICES @ rot.T
-
-        # Weak perspective projection (z pushes things slightly smaller/larger)
-        scale = min(self.width, self.height) * self.size
-        cx, cy = self.width / 2, self.height / 2
-        depth_scale = 6.0  # distance from camera; larger = flatter
-
-        factor = depth_scale / (depth_scale + rotated[:, 2])  # (8,) broadcast
-        projected = np.empty((8, 2))
-        projected[:, 0] = cx + rotated[:, 0] * scale * factor
-        projected[:, 1] = cy + rotated[:, 1] * scale * factor
-
-        # Draw edges
-        for i0, i1 in _EDGES:
-            _draw_line(
-                frame,
-                projected[i0, 0],
-                projected[i0, 1],
-                projected[i1, 0],
-                projected[i1, 1],
-            )
-
-        return frame
-
-
-def _draw_line(frame: np.ndarray, x0: float, y0: float, x1: float, y1: float) -> None:
-    """Draw a 1px line using Bresenham's algorithm."""
+def _draw_line(
+    frame: np.ndarray,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    thickness: int = 1,
+) -> None:
+    """Draw a line with a square brush of the given thickness."""
     h, w = frame.shape
     dx = abs(x1 - x0)
     dy = abs(y1 - y0)
@@ -133,5 +76,87 @@ def _draw_line(frame: np.ndarray, x0: float, y0: float, x1: float, y1: float) ->
     i = np.arange(steps + 1)
     px = np.round(x0 + i * xs).astype(int)
     py = np.round(y0 + i * ys).astype(int)
-    valid = (px >= 0) & (px < w) & (py >= 0) & (py < h)
-    frame[py[valid], px[valid]] = 1.0
+
+    if thickness <= 1:
+        valid = (px >= 0) & (px < w) & (py >= 0) & (py < h)
+        frame[py[valid], px[valid]] = 1.0
+    else:
+        half = thickness // 2
+        for ox in range(-half, -half + thickness):
+            for oy in range(-half, -half + thickness):
+                qx = px + ox
+                qy = py + oy
+                valid = (qx >= 0) & (qx < w) & (qy >= 0) & (qy < h)
+                frame[qy[valid], qx[valid]] = 1.0
+
+
+@register_animation("wireframe_cube")
+class WireframeCube(SupersampledAnimation):
+    """Rotating 3D wireframe cube, oldschool demoscene style."""
+
+    PARAMS = (
+        # Cube size as a fraction of the display
+        Param("size", float, 0.35, min=0.1, max=0.5, step=0.05),
+        Param("rotation_speed", float, 0.35, min=-5, max=5, step=0.05, unit="rad/s"),
+        # Rotation weight per axis
+        Param("axis_x", float, 1.0, min=-2, max=2, step=0.1),
+        Param("axis_y", float, 0.7, min=-2, max=2, step=0.1),
+        Param("axis_z", float, 0.3, min=-2, max=2, step=0.1),
+    )
+
+    def __init__(self, width: int, height: int):
+        super().__init__(width, height, supersample=2, processing_steps=("binarize",))
+
+        for name in ("size", "rotation_speed", "axis_x", "axis_y", "axis_z"):
+            setattr(self, name, self.params[name])
+
+        self.angle = 0.0
+
+        # Line thickness: next odd >= supersample so edges survive downsampling
+        self._thickness = self.supersample | 1
+
+    @override
+    def on_configure(self, **params):
+        # Every parameter maps straight onto the attribute of the same name
+        for name, value in params.items():
+            setattr(self, name, value)
+
+    @override
+    def step(self, dt: float) -> None:
+        self.current_time += dt
+        self.angle += self.rotation_speed * dt
+
+    @override
+    def render_hires(self) -> np.ndarray:
+        frame = np.zeros((self.hheight, self.hwidth), dtype=np.float32)
+
+        # Rotate vertices
+        rot = _rotation_matrix(
+            self.angle * self.axis_x,
+            self.angle * self.axis_y,
+            self.angle * self.axis_z,
+        )
+        rotated = _VERTICES @ rot.T
+
+        # Weak perspective projection (z pushes things slightly smaller/larger)
+        scale = min(self.hwidth, self.hheight) * self.size
+        cx, cy = self.hwidth / 2, self.hheight / 2
+        depth_scale = 6.0  # distance from camera; larger = flatter
+
+        factor = depth_scale / (depth_scale + rotated[:, 2])  # (8,) broadcast
+        projected = np.empty((8, 2))
+        projected[:, 0] = cx + rotated[:, 0] * scale * factor
+        projected[:, 1] = cy + rotated[:, 1] * scale * factor
+
+        # Draw edges with thickness scaled to survive downsampling
+        for i0, i1 in _EDGES:
+            _draw_line(
+                frame,
+                projected[i0, 0],
+                projected[i0, 1],
+                projected[i1, 0],
+                projected[i1, 1],
+                thickness=self._thickness,
+            )
+
+        return frame

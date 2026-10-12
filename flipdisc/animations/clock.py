@@ -1,51 +1,73 @@
-"""Clock animation — displays current system time with a narrow colon."""
+"""Clock animation — digital or analog display of current system time."""
 
 from __future__ import annotations
 
 from datetime import datetime
+from typing import override
 
 import numpy as np
 
-from flipdisc.fonts.loader import load_font
+from flipdisc.fonts.loader import list_fonts, load_font
 
+from .analog_clock import AnalogClockAnimation
 from .base import Animation, register_animation
+from .params import Param
+
+_STYLES = ("digital", "analog")
 
 
 @register_animation("clock")
 class ClockAnimation(Animation):
-    """Displays the current system time as HH:MM.
+    """Unified clock animation with digital and analog styles.
 
-    The colon is drawn as two 1px dots (not from the font glyph) to keep it
-    narrow. A 1px gap is added on each side when space permits. Updates
-    automatically every frame from the system clock.
-
-    Configure with:
-        font        — font name (default "compact")
-        format      — "24h" (default) or "12h"
-        blink_colon — bool, colon hidden when second is odd (default False)
+    font, format and blink_colon apply to the digital style only.
     """
+
+    PARAMS = (
+        Param("style", str, "digital", choices=_STYLES),
+        Param("font", str, "standard", choices=list_fonts),
+        Param("format", str, "24h", choices=("24h", "12h")),
+        Param("blink_colon", bool, False),
+    )
 
     def __init__(self, width: int, height: int):
         super().__init__(width, height, processing_steps=("binarize",))
-        self._font_name = "standard"
-        self._font = load_font("standard")
-        self._format = "24h"
-        self._blink_colon = False
 
-    def configure(self, **params) -> None:
-        super().configure(**params)
+        self._style = self.params["style"]
+
+        # Digital state
+        self._font_name = self.params["font"]
+        self._font = load_font(self._font_name)
+        self._format = self.params["format"]
+        self._blink_colon = self.params["blink_colon"]
+
+        # Analog delegate
+        self._analog = AnalogClockAnimation(width, height)
+
+    @override
+    def on_configure(self, **params) -> None:
+        if "style" in params:
+            self._style = params["style"]
         if "font" in params:
-            self._font_name = str(params["font"])
+            self._font_name = params["font"]
             self._font = load_font(self._font_name)
         if "format" in params:
-            self._format = str(params["format"])
+            self._format = params["format"]
         if "blink_colon" in params:
-            self._blink_colon = bool(params["blink_colon"])
+            self._blink_colon = params["blink_colon"]
 
+    @override
     def step(self, dt: float) -> None:
         self.current_time += dt
+        self._analog.step(dt)
 
+    @override
     def render_gray(self) -> np.ndarray:
+        if self._style == "analog":
+            return self._analog.render_gray()
+        return self._render_digital()
+
+    def _render_digital(self) -> np.ndarray:
         now = datetime.now()
 
         if self._format == "12h":

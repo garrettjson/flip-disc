@@ -11,8 +11,11 @@ Usage::
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 import httpx
+
+from flipdisc.services.moon_phase import moon_phase
 
 # WMO weather interpretation codes → canonical condition strings
 # https://open-meteo.com/en/docs#weathervariables
@@ -50,11 +53,30 @@ WMO_TO_CONDITION: dict[int, str] = {
 _OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
 
+_SUN_TRANSITION_MINUTES = 15  # ±15 min window around sunrise/sunset
+
+
 @dataclass
 class WeatherData:
     temp: float
     condition: str  # one of the canonical condition strings
     unit: str  # "F" or "C"
+    wmo_code: int | None = None
+    moon_phase: float | None = None
+    sun_progress: float | None = None  # 0.0–1.0 during sunrise/sunset window
+
+
+def _sun_transition_progress(
+    now: datetime, event_time_str: str | None, window: int
+) -> float | None:
+    """Return normalized progress [0, 1] if now is within ±window of event, else None."""
+    if not event_time_str:
+        return None
+    event = datetime.fromisoformat(event_time_str)
+    diff = (now - event).total_seconds()
+    if not (-window <= diff <= window):
+        return None
+    return max(0.0, min(1.0, (diff + window) / (2 * window)))
 
 
 async def fetch_weather(
@@ -84,6 +106,8 @@ async def fetch_weather(
         "longitude": longitude,
         "current_weather": "true",
         "temperature_unit": temp_unit_param,
+        "daily": "sunrise,sunset",
+        "timezone": "auto",
     }
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.get(_OPEN_METEO_URL, params=params)
@@ -97,7 +121,41 @@ async def fetch_weather(
     condition = WMO_TO_CONDITION.get(wmo_code, "cloudy")
 
     # Use moon icon for clear-sky night (WMO 0 at night)
+    phase: float | None = None
     if wmo_code == 0 and is_day == 0:
         condition = "moon"
+        phase = moon_phase()
 
-    return WeatherData(temp=temp, condition=condition, unit=unit.upper())
+    # Compute sunrise/sunset progress
+    sun_prog: float | None = None
+    daily = data.get("daily", {})
+    sunrise_list = daily.get("sunrise", [])
+    sunset_list = daily.get("sunset", [])
+    now_str = current.get("time")
+
+    if now_str and (sunrise_list or sunset_list):
+        now = datetime.fromisoformat(now_str)
+        window = _SUN_TRANSITION_MINUTES * 60  # seconds
+
+        rise = _sun_transition_progress(
+            now, sunrise_list[0] if sunrise_list else None, window
+        )
+        if rise is not None:
+            sun_prog = rise
+            condition = "sunrise"
+        else:
+            sset = _sun_transition_progress(
+                now, sunset_list[0] if sunset_list else None, window
+            )
+            if sset is not None:
+                sun_prog = 1.0 - sset
+                condition = "sunset"
+
+    return WeatherData(
+        temp=temp,
+        condition=condition,
+        unit=unit.upper(),
+        wmo_code=wmo_code,
+        moon_phase=phase,
+        sun_progress=sun_prog,
+    )

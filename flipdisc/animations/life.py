@@ -1,9 +1,13 @@
 """Conway's Game of Life animation."""
 
+from typing import override
+
 import numpy as np
 from scipy.ndimage import convolve
 
 from .base import Animation, register_animation
+from .cadence import Cadence
+from .params import Param
 
 # Kernel that counts the 8 neighbors of each cell (toroidal wrap)
 _NEIGHBOR_KERNEL = np.array([[1, 1, 1], [1, 0, 1], [1, 1, 1]])
@@ -14,30 +18,52 @@ _GLOW_KERNEL = np.array(
 )
 
 
+# Named seed patterns: (dx, dy) offsets from the display center
+_PATTERNS: dict[str, list[tuple[int, int]]] = {
+    "glider": [(1, 0), (2, 1), (0, 2), (1, 2), (2, 2)],
+    "blinker": [(-1, 0), (0, 0), (1, 0)],
+    "block": [(0, 0), (0, 1), (1, 0), (1, 1)],
+    "beacon": [(0, 0), (0, 1), (1, 0), (2, 3), (3, 2), (3, 3)],
+}
+
+
 @register_animation("life")
 class Life(Animation):
     """Conway's Game of Life cellular automaton with toroidal wrapping."""
+
+    PARAMS = (
+        Param("density", float, 0.3, min=0.0, max=1.0, step=0.05),
+        Param("pattern", str, "random", choices=("random", *_PATTERNS)),
+        Param("rate", float, 20.0, min=0, max=60, step=1, unit="gen/s"),
+    )
 
     def __init__(self, width: int, height: int):
         super().__init__(width, height, processing_steps=("dither",))
 
         self.grid = np.zeros((height, width), dtype=bool)
         self.generation = 0
+        self.rate = self.params["rate"]  # generations per second
+        self._cadence = Cadence()
 
-        self._randomize(density=0.3)
+        self._randomize(density=self.params["density"])
 
-    def configure(self, **params):
-        super().configure(**params)
-
+    @override
+    def on_configure(self, **params):
+        # Setting density or pattern re-seeds the grid
         if "density" in params:
-            self._randomize(float(params["density"]))
+            self._randomize(params["density"])
         if "pattern" in params:
             self._load_pattern(params["pattern"])
+        if "rate" in params:
+            self.rate = params["rate"]
 
+    @override
     def step(self, dt: float) -> None:
         self.current_time += dt
-        self._update_generation()
+        for _ in range(self._cadence.advance(self.rate, dt)):
+            self._update_generation()
 
+    @override
     def render_gray(self) -> np.ndarray:
         frame = self.grid.astype(np.float32)
 
@@ -79,16 +105,9 @@ class Life(Animation):
         self.grid.fill(False)
         self.generation = 0
 
-        patterns = {
-            "glider": [(1, 0), (2, 1), (0, 2), (1, 2), (2, 2)],
-            "blinker": [(-1, 0), (0, 0), (1, 0)],
-            "block": [(0, 0), (0, 1), (1, 0), (1, 1)],
-            "beacon": [(0, 0), (0, 1), (1, 0), (2, 3), (3, 2), (3, 3)],
-        }
-
-        coords = patterns.get(pattern_name)
+        coords = _PATTERNS.get(pattern_name)
         if coords is not None:
             offset = (-1, -1) if pattern_name in ("glider", "beacon") else (0, 0)
             self._place_pattern(coords, offset_x=offset[0], offset_y=offset[1])
         else:
-            self._randomize()
+            self._randomize(self.params["density"])

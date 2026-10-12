@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from typing import override
+
 import numpy as np
 
-from flipdisc.clips.loader import ClipData, load_clip
+from flipdisc.clips.loader import ClipData, list_clips, load_clip
 
 from .base import Animation, register_animation
+from .params import Param
 
 
 def _blit_fit(canvas: np.ndarray, src: np.ndarray, mode: str) -> None:
@@ -43,6 +46,9 @@ def _blit_fit(canvas: np.ndarray, src: np.ndarray, mode: str) -> None:
         canvas[:] = np.tile(src, (n_y, n_x))[:ch, :cw]
 
 
+_FIT_MODES = ("center", "stretch", "tile")
+
+
 @register_animation("clip")
 class ClipAnimation(Animation):
     """Plays a pre-rendered clip (.npz) full-screen on the display.
@@ -51,9 +57,18 @@ class ClipAnimation(Animation):
 
     API usage::
 
-        POST /anim/clip
+        POST / anim / clip
         {"name": "rain", "loop": true}
     """
+
+    PARAMS = (
+        # Clip names come from clips.toml; an unknown name fails when it is loaded
+        Param("name", str, None, choices=list_clips, strict=False, nullable=True),
+        # None = use the values stored with the clip
+        Param("fps_override", float, None, min=0.1, max=120, unit="fps", nullable=True),
+        Param("loop", bool, None, nullable=True),
+        Param("fit_mode", str, "center", choices=_FIT_MODES),
+    )
 
     def __init__(self, width: int, height: int):
         super().__init__(width, height, processing_steps=None)
@@ -63,22 +78,23 @@ class ClipAnimation(Animation):
         self._frame_idx: float = 0.0
         self._fit_mode: str = "center"
 
-    def configure(self, **params) -> None:
-        super().configure(**params)
-        if "name" in params:
+    @override
+    def on_configure(self, **params) -> None:
+        if params.get("name") is not None:
             self._clip = load_clip(params["name"])
             self._fps = self._clip.fps
             self._loop = self._clip.loop
             self._frame_idx = 0.0
             self._completed = False
             self._fit_mode = "center"
-        if "fps_override" in params:
-            self._fps = float(params["fps_override"])
-        if "loop" in params:
-            self._loop = bool(params["loop"])
+        if params.get("fps_override") is not None:
+            self._fps = params["fps_override"]
+        if params.get("loop") is not None:
+            self._loop = params["loop"]
         if "fit_mode" in params:
-            self._fit_mode = str(params["fit_mode"])
+            self._fit_mode = params["fit_mode"]
 
+    @override
     def step(self, dt: float) -> None:
         self.current_time += dt
         if self._clip is None:
@@ -94,6 +110,7 @@ class ClipAnimation(Animation):
             self._frame_idx = float(n - 1)
             self._completed = True
 
+    @override
     def render_gray(self) -> np.ndarray:
         canvas = np.zeros((self.height, self.width), dtype=np.float32)
         if self._clip is None:
@@ -103,6 +120,7 @@ class ClipAnimation(Animation):
         _blit_fit(canvas, src, self._fit_mode)
         return canvas
 
+    @override
     def reset(self, seed: int | None = None) -> None:
         super().reset(seed)
         self._frame_idx = 0.0

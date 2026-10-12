@@ -19,6 +19,8 @@
       <div><strong>Connected:</strong> <span id="connected">-</span></div>
       <div><strong>FPS:</strong> <span id="fps">-</span></div>
       <div><strong>Frames Presented:</strong> <span id="presented">-</span></div>
+      <div><strong>Animation:</strong> <span id="current-anim">-</span></div>
+      <div id="last-error" style="color: #b00020;"></div>
     </div>
 
     <div class="status-card">
@@ -46,6 +48,7 @@
       <div id="animation-params" style="margin-top: 16px; border-top: 1px solid #ddd; padding-top: 12px;">
         <h4 style="margin: 0 0 8px 0;">Animation Parameters</h4>
         <div id="params-container"></div>
+        <div id="param-error" style="color: #b00020; margin-top: 8px;"></div>
       </div>
     </div>
 
@@ -55,6 +58,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=2"></script>
+  <script src="/static/app.js?v=3"></script>
 </body>
 </html>
