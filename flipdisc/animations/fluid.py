@@ -55,6 +55,7 @@ class FluidSimulation(Animation):
         "gravity": 80.0,
         "collision_damping": 0.5,
         "substeps": 5,
+        "time_scale": 1.0 / 3.0,
         "slosh_amplitude": 0.2,
         "slosh_frequency": 0.15,
         "fill_level": 0.5,
@@ -396,8 +397,13 @@ class FluidSimulation(Animation):
 
     @override
     def step(self, dt: float) -> None:
+        # time_scale < 1 plays the simulation in slow motion
+        dt *= self._time_scale
         self.current_time += dt
-        substeps = self._substeps
+
+        # `substeps` is per 1/60 s of simulated time, so the substep size (and
+        # with it the stability of the solver) doesn't depend on the frame rate
+        substeps = max(1, round(self._substeps * dt * 60.0))
         dt_sub = dt / substeps
         for _ in range(substeps):
             self._substep(dt_sub)

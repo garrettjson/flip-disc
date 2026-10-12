@@ -25,7 +25,8 @@ class _BrokenStep(Animation):
 
 
 async def _started(animation: str = "bouncing_dot") -> DisplayPipeline:
-    pipeline = DisplayPipeline(DisplayConfig())
+    # A short buffer keeps the delay between a request and its frame small
+    pipeline = DisplayPipeline(DisplayConfig(buffer_duration=0.1))
     await pipeline.start(animation=animation)
     await pipeline.play()
     await asyncio.sleep(0.5)
@@ -138,8 +139,7 @@ def test_requests_are_applied_in_order():
         # Two configures in quick succession: neither may be lost
         await pipeline.configure_animation({"text": "AB", "mode": "static"})
         await pipeline.configure_animation({"font": "compact"})
-        # Frames queued before the configure play out first (buffer_duration)
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(0.5)
         st = pipeline.get_status()
         assert st.last_error is None
         frame = pipeline.get_last_frame_bits()

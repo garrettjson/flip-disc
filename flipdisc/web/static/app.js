@@ -69,20 +69,21 @@ function getAnimationParams(animationName) {
     bouncing_dot: [
       { name: 'start_x', label: 'Start X', type: 'number', min: 0, max: 39, value: 2 },
       { name: 'start_y', label: 'Start Y', type: 'number', min: 0, max: 27, value: 5 },
-      { name: 'speed_x', label: 'Speed X', type: 'number', min: -5, max: 5, value: 1 },
-      { name: 'speed_y', label: 'Speed Y', type: 'number', min: -5, max: 5, value: 2 }
+      { name: 'speed_x', label: 'Speed X (px/s)', type: 'number', min: -100, max: 100, step: 5, value: 20 },
+      { name: 'speed_y', label: 'Speed Y (px/s)', type: 'number', min: -100, max: 100, step: 5, value: 40 }
     ],
     life: [
       { name: 'density', label: 'Density', type: 'number', min: 0.1, max: 0.9, step: 0.1, value: 0.3 },
-      { name: 'pattern', label: 'Pattern', type: 'select', options: ['random', 'glider', 'blinker', 'block', 'beacon'], value: 'random' }
+      { name: 'pattern', label: 'Pattern', type: 'select', options: ['random', 'glider', 'blinker', 'block', 'beacon'], value: 'random' },
+      { name: 'rate', label: 'Generations/s', type: 'number', min: 1, max: 30, step: 1, value: 20 }
     ],
     simplex_noise: [
       { name: 'scale', label: 'Scale', type: 'number', min: 1, max: 20, step: 0.5, value: 4.0 },
-      { name: 'step_size', label: 'Speed', type: 'number', min: 0.01, max: 0.5, step: 0.01, value: 0.05 }
+      { name: 'speed', label: 'Speed', type: 'number', min: 0.2, max: 10, step: 0.2, value: 1.0 }
     ],
     wireframe_cube: [
       { name: 'size', label: 'Size', type: 'number', min: 0.1, max: 0.5, step: 0.05, value: 0.35 },
-      { name: 'rotation_speed', label: 'Rot Speed', type: 'number', min: 0.1, max: 5.0, step: 0.1, value: 1.0 },
+      { name: 'rotation_speed', label: 'Rot Speed (rad/s)', type: 'number', min: 0.05, max: 2.0, step: 0.05, value: 0.35 },
       { name: 'axis_x', label: 'Axis X', type: 'number', min: 0, max: 2.0, step: 0.1, value: 1.0 },
       { name: 'axis_y', label: 'Axis Y', type: 'number', min: 0, max: 2.0, step: 0.1, value: 0.7 },
       { name: 'axis_z', label: 'Axis Z', type: 'number', min: 0, max: 2.0, step: 0.1, value: 0.3 }
@@ -91,7 +92,7 @@ function getAnimationParams(animationName) {
       { name: 'text', label: 'Text', type: 'text', value: 'HELLO' },
       { name: 'mode', label: 'Mode', type: 'select', options: ['static', 'scroll_left', 'scroll_up', 'scroll_down'], value: 'scroll_left' },
       { name: 'font', label: 'Font', type: 'select', options: availableFonts, value: availableFonts[0] },
-      { name: 'speed', label: 'Speed', type: 'number', min: 1, max: 100, step: 1, value: 20 },
+      { name: 'speed', label: 'Speed (px/s)', type: 'number', min: 1, max: 40, step: 1, value: 7 },
       { name: 'loop', label: 'Loop', type: 'checkbox', value: true }
     ],
     clock: [
@@ -107,10 +108,10 @@ function getAnimationParams(animationName) {
       { name: 'show_degree', label: 'Degree Symbol', type: 'checkbox', value: true },
       { name: 'override_condition', label: 'Condition Override', type: 'select', options: ['', 'sunny', 'partly_cloudy', 'cloudy', 'rain', 'snow', 'thunderstorm', 'fog', 'sunrise', 'sunset'], value: '', optionLabels: ['— API —', 'Sunny', 'Partly Cloudy', 'Cloudy', 'Rain', 'Snow', 'Thunderstorm', 'Fog', 'Sunrise', 'Sunset'] },
       { name: 'sun_progress', label: 'Sun Progress', type: 'number', min: 0, max: 1, step: 0.05, value: 0.5 },
-      { name: 'spawn_rate', label: 'Precip Rate', type: 'number', min: 0.5, max: 10, step: 0.5, value: 2.0 },
-      { name: 'fall_speed', label: 'Fall Speed', type: 'number', min: 1, max: 30, step: 0.5, value: 6.0 },
+      { name: 'spawn_rate', label: 'Precip Rate (/s)', type: 'number', min: 0.1, max: 4, step: 0.1, value: 0.7 },
+      { name: 'fall_speed', label: 'Fall Speed (px/s)', type: 'number', min: 0.5, max: 10, step: 0.1, value: 2.0 },
       { name: 'droplet_size', label: 'Droplet Size', type: 'number', min: 1, max: 3, step: 1, value: 2 },
-      { name: 'strike_interval', label: 'Strike Interval (s)', type: 'number', min: 1, max: 600, step: 1, value: 300 }
+      { name: 'strike_interval', label: 'Strike Interval (s)', type: 'number', min: 1, max: 1800, step: 1, value: 900 }
     ]
   };
   return params[animationName] || [];

@@ -26,7 +26,7 @@ class DisplayConfig:
     """
 
     refresh_rate: float = 20.0
-    buffer_duration: float = 0.5
+    buffer_duration: float = 1.0
 
     # Serial configuration
     serial: SerialConfig = field(default_factory=SerialConfig)
@@ -115,7 +115,7 @@ def _parse_config(data: dict) -> DisplayConfig:
 
         return DisplayConfig(
             refresh_rate=display_section.get("refresh_rate", 20.0),
-            buffer_duration=display_section.get("buffer_duration", 0.5),
+            buffer_duration=display_section.get("buffer_duration", 1.0),
             serial=serial_config,
             panel_w=panel_w,
             panel_h=panel_h,

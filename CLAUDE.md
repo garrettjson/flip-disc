@@ -47,7 +47,7 @@ From the manufacturer's manual and protocol sheet; the full reference is `docs/h
 
 Goals stated by the owner; some are not yet true of the code. Ask before proposing something that contradicts them.
 
-- **The display's frame rate drives the animation.** One presenter tick = one frame requested = the animation advances by one display interval. (Today the step is a hard-coded 1/60 s and frames are queued 0.5 s ahead — see "Things That Will Bite You".)
+- **The display's frame rate drives the animation.** One presenter tick = one frame requested = the animation advances by one display interval (`step(1 / refresh_rate)`).
 - **Plenty of compute headroom.** The target is a Raspberry Pi (model undecided), with heavier simulation-style animations planned. A frame should cost a small fraction of the frame interval (50–100 ms at 10–20 fps), on the Pi, not just on the dev machine (an Intel Mac).
 
 Decisions the owner has made about the refactor (October 2026):
@@ -55,7 +55,7 @@ Decisions the owner has made about the refactor (October 2026):
 - **Python for everything, for the time being.** A rewrite in another language was considered and set aside.
 - **Performance work comes last.** No Numba or other compiled kernels until the structural work is done, even though `fluid` (~100–190 ms per frame) and `simplex_noise` (~27 ms) are too slow today; every other animation costs under 3 ms.
 - **Animations will declare their parameters** (type, default, range) so the API can validate them and the web UI can build its controls from the schema. Not built yet.
-- **Keep a frame buffer of about one second**, not a single-frame handoff.
+- **Keep a frame buffer of about one second**, not a single-frame handoff. (`buffer_duration = 1.0`.)
 - Don't make other structural changes to `engine/`, `animations/base.py`, or the API boundary without checking what has been agreed.
 
 ---
@@ -69,7 +69,7 @@ Run everything **from the repo root** — fonts, clips, and config are loaded vi
 - Lint: `uv run ruff check --fix`
 - Format: `uv run ruff format`
 - Server: `uv run python -m flipdisc run-server --config config.toml` (add `--reload` for hot reload); UI at `http://localhost:8000/ui`, OpenAPI at `/docs`
-- Terminal preview: `uv run python -m flipdisc preview -a <name> -n 5` (`--list` for names; default params only)
+- Terminal preview: `uv run python -m flipdisc preview -a <name> -n 5` (`--list` for names; default params only; steps at the config's `refresh_rate`, like the display)
 
 Before calling a change done: run the tests, run ruff on the files you touched, and for anything visual look at actual frames (see Debugging below).
 
@@ -130,7 +130,7 @@ Unregistered building blocks: `SupersampledAnimation` (render at N× and block-a
 Interface (`flipdisc/animations/base.py`):
 
 - `__init__(width, height)` — call `super().__init__(width, height, processing_steps=(...))`
-- `step(dt)` — advance simulation by dt seconds
+- `step(dt)` — advance by dt seconds; the pipeline passes one display interval (`1 / refresh_rate`), so rates and speeds are in real units per second
 - `render_gray()` -> `np.ndarray` shape `(height, width)`, float32 in [0, 1]
 - `configure(**params)` — optional, runtime parameter changes
 - `reset(seed=None)` / `is_complete()` — optional
@@ -167,8 +167,8 @@ class WeatherDashboard(ComposedAnimation):
 Verified behaviors that are easy to trip over. Delete an entry when you fix it.
 
 - **Animation errors are reported through `/status`, not the HTTP response.** An unknown animation name is rejected with a 400. Anything that fails later on the generator thread — a `configure()` that raises, a constructor that fails, a `step()` that throws — is logged and recorded in `pipeline.last_error` on `GET /status`, while the request that caused it has already returned 200. A failed switch or configure leaves the current animation running; an animation that raises while running is dropped (`animation` becomes `null`) and the display holds its last frame until the next successful switch.
-- **Simulation time is not wall-clock time.** The generator calls `step(1/60)` exactly once per produced frame. At 20 fps the sim advances 1/3 s per real second, so speeds in "units per second" run at 1/3 of nominal on the display. Only some animations scale by `dt` at all: `text`, `wireframe_cube`, `pendulum`, `fluid`, and the `weather` precipitation effects do; `bouncing_dot`, `life`, and `simplex_noise` advance a fixed amount per `step()` call and ignore `dt`; `clock` reads `datetime.now()`. The `preview` CLI takes 3 steps per printed frame, so it shows motion ~3× faster than the display does.
-- **Clip playback** advances `fps / 60` clip frames per presented frame — a clip needs `fps = 60` to show one clip frame per display frame.
+- **Live `configure` lags by up to `buffer_duration` (1 s).** The generator computes ahead to fill the frame buffer, so a parameter change only shows once the frames already queued have played out. Switching animations is immediate (it drains the buffer).
+- **A slow animation plays in slow motion.** Each produced frame advances the animation by exactly one display interval, so if frames take longer than that to compute (`fluid` does today), the display falls behind real time instead of skipping.
 - **Clips are GIFs** listed in `assets/clips/clips.toml` (create with `flipdisc/clips/importer.py`). Some docstrings still say `.npz`. No clips are checked in.
 - **`[weather]` in `config.toml` is not parsed.** The fetch loop only starts via `POST /weather/config` (the web UI does this when you start `weather`).
 - **`GET /images`** globs `assets/images/*.png`; the only images are `assets/images/weather/*.bmp`, so it returns `[]`.

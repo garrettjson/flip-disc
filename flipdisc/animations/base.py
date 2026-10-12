@@ -45,7 +45,7 @@ class Animation(ABC):
         Advance the animation simulation by dt seconds.
 
         Args:
-            dt: Time step in seconds (typically 1/60 for 60fps)
+            dt: Time step in seconds (one display interval, 1 / refresh_rate)
         """
 
     @abstractmethod

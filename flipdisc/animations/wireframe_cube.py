@@ -97,7 +97,7 @@ class WireframeCube(SupersampledAnimation):
         super().__init__(width, height, supersample=2, processing_steps=("binarize",))
 
         self.size = 0.35  # cube size as fraction of display
-        self.rotation_speed = 1.0  # radians per second
+        self.rotation_speed = 0.35  # radians per second
         self.axis_x = 1.0  # rotation weight per axis
         self.axis_y = 0.7
         self.axis_z = 0.3

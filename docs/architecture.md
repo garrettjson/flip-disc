@@ -23,7 +23,7 @@ The animation object is created, configured, stepped, and rendered **only on the
 `python -m flipdisc run-server` → `cli.py` → `FlipDiscApplication.start` (`app.py`):
 
 1. `load_config(path)` reads the TOML into a `DisplayConfig`. With no `--config`, it looks for `./config.toml`, then `./flipdisc.toml`, then falls back to built-in defaults. Only `[display]` and `[serial]` are read.
-2. `DisplayPipeline(cfg)` builds the serial transport (mock unless `serial.mock = false`), the `ProtocolEncoder`, and the frame queue with capacity `max(1, int(refresh_rate * buffer_duration))` — 10 frames with the defaults.
+2. `DisplayPipeline(cfg)` builds the serial transport (mock unless `serial.mock = false`), the `ProtocolEncoder`, and the frame queue with capacity `max(1, int(refresh_rate * buffer_duration))` — 20 frames with the defaults (20 fps × 1 s).
 3. `pipeline.start("bouncing_dot")` connects serial, queues the initial animation as the generator's first request, starts the generator thread, and starts the presenter task. **Nothing is displayed yet**: the generator waits until `play()` is called, which happens on the first `POST /anim/{name}`.
 4. uvicorn serves the API.
 
@@ -34,10 +34,10 @@ The animation object is created, configured, stepped, and rendered **only on the
 ```
 generator thread                                   event loop
 ────────────────                                   ──────────
-anim.step(1/60)
+anim.step(1/refresh_rate)
 anim.render_gray()        float32 (H, W) in [0,1]
 apply_processing_pipeline bool (H, W), or float32 0/1 if steps=None
-queue.put(frame) ───────► queue.Queue(maxsize=10) ───────► presenter tick (every 1/refresh_rate s)
+queue.put(frame) ───────► queue.Queue(maxsize=20) ───────► presenter tick (every 1/refresh_rate s)
   blocks while full                                        frame == last written?  ── yes ─► skip write
                                                            split_canvas_bits_to_panels   list of (7, panel_w)
                                                            ProtocolEncoder.encode_batch  bytes
@@ -53,7 +53,7 @@ Each iteration, in order:
 1. Apply every pending control request, in the order they were made (§4).
 2. If not playing, wait up to 50 ms and retry.
 3. If there is no animation (none has been built successfully, or the last one failed while running), wait 50 ms and retry.
-4. `anim.step(1/60)`, then `anim.render_gray()`.
+4. `anim.step(frame_interval)`, then `anim.render_gray()`. The step is one display interval (`1 / refresh_rate`), read each iteration so `set_refresh_rate` takes effect immediately.
 5. `apply_processing_pipeline(gray, anim.processing_steps)` (`gfx/postprocessing.py`): each named step in order. The default is `("binarize",)`, a strict `> 0.5` threshold producing a bool array. `None` skips processing — `ClipAnimation` and every `ComposedAnimation` (including `weather`) put **float32** 0/1 frames on the queue.
 6. `queue.put(frame, timeout=0.05)`, retried until there is room or the pipeline stops.
 
@@ -64,9 +64,9 @@ Animation code can raise anything, so the thread has two crash barriers, both of
 
 Consequences worth knowing:
 
-- **The generator runs ahead, then idles.** It fills the queue as fast as it can, then produces exactly one frame each time the presenter takes one. Every frame shown was computed up to `buffer_duration` (0.5 s) earlier.
+- **The generator runs ahead, then idles.** It fills the queue as fast as it can, then produces exactly one frame each time the presenter takes one. Every frame shown was computed up to `buffer_duration` (1 s) earlier.
 - **A switch drains the queue; a configure does not.** A live `configure` becomes visible only after the frames already queued have played out.
-- **The step is fixed at 1/60 s per frame**, independent of `refresh_rate`. See "Simulation time" in `CLAUDE.md`.
+- **One produced frame = one display interval of animation time.** Animation speeds are therefore in real units per second as long as the generator keeps up; when it can't, the display shows slow motion, not dropped frames.
 
 ### Presenter loop (`_present_loop`)
 

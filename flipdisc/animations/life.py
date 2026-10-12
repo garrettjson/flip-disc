@@ -25,6 +25,8 @@ class Life(Animation):
 
         self.grid = np.zeros((height, width), dtype=bool)
         self.generation = 0
+        self.rate = 20.0  # generations per second
+        self._generation_timer = 0.0
 
         self._randomize(density=0.3)
 
@@ -36,11 +38,21 @@ class Life(Animation):
             self._randomize(float(params["density"]))
         if "pattern" in params:
             self._load_pattern(params["pattern"])
+        if "rate" in params:
+            self.rate = max(0.0, float(params["rate"]))
 
     @override
     def step(self, dt: float) -> None:
         self.current_time += dt
-        self._update_generation()
+        if self.rate <= 0:
+            return
+
+        self._generation_timer += dt
+        interval = 1.0 / self.rate
+        # Small tolerance so float error doesn't delay a generation by a frame
+        while self._generation_timer >= interval - 1e-9:
+            self._generation_timer -= interval
+            self._update_generation()
 
     @override
     def render_gray(self) -> np.ndarray:

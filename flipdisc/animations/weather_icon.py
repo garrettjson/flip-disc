@@ -235,10 +235,10 @@ class WeatherIconAnimation(Animation):
                 max_y=self.height - 1,
                 spawn_rate=spawn_rate
                 if spawn_rate is not None
-                else preset.get("spawn_rate", 3.0),
+                else preset.get("spawn_rate", 1.0),
                 fall_speed=fall_speed
                 if fall_speed is not None
-                else preset.get("fall_speed", 14.0),
+                else preset.get("fall_speed", 4.67),
                 droplet_size=int(droplet_size)
                 if droplet_size is not None
                 else preset.get("droplet_size", 2),
@@ -255,7 +255,7 @@ class WeatherIconAnimation(Animation):
                 max_y=self.height - 1,
                 strike_interval=float(strike_interval)
                 if strike_interval is not None
-                else preset.get("strike_interval", 300.0),
+                else preset.get("strike_interval", 900.0),
                 text_row=self.height - 8,
                 text_max_col=12,
             )
@@ -264,8 +264,8 @@ class WeatherIconAnimation(Animation):
                 cloud_cols_range=cols_range,
                 spawn_y=bottom_row + 1,
                 max_y=self.height - 1,
-                spawn_rate=spawn_rate if spawn_rate is not None else 2.0,
-                fall_speed=fall_speed if fall_speed is not None else 6.0,
+                spawn_rate=spawn_rate if spawn_rate is not None else 0.67,
+                fall_speed=fall_speed if fall_speed is not None else 2.0,
             )
 
     @override

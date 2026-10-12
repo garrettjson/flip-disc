@@ -148,7 +148,11 @@ class TestMoonPhaseIcon:
 class TestSnowEffect:
     def test_particles_spawn_and_fall(self):
         effect = SnowEffect(
-            cloud_cols_range=(13, 22), spawn_y=10, max_y=27, spawn_rate=10.0
+            cloud_cols_range=(13, 22),
+            spawn_y=10,
+            max_y=27,
+            spawn_rate=10.0,
+            fall_speed=6.0,
         )
         # Step enough to spawn particles
         for _ in range(30):
@@ -380,8 +384,8 @@ class TestRainWeatherIcon:
         icon.configure(condition="rain", wmo_code=65)
         precip = icon._precip
         assert isinstance(precip, RainEffect)
-        assert precip._spawn_rate == 5.0
-        assert precip._fall_speed == 18.0
+        assert precip._spawn_rate == 1.67
+        assert precip._fall_speed == 6.0
         assert precip._droplet_size == 3
 
     def test_explicit_params_override_preset(self):
@@ -392,7 +396,7 @@ class TestRainWeatherIcon:
         assert precip._spawn_rate == 1.0
         assert precip._droplet_size == 1
         # fall_speed should come from preset since not overridden
-        assert precip._fall_speed == 18.0
+        assert precip._fall_speed == 6.0
 
     def test_switching_condition_clears_precip(self):
         icon = WeatherIconAnimation(28, 28)
@@ -415,8 +419,8 @@ class TestRainWeatherIcon:
         icon.configure(condition="rain")
         precip = icon._precip
         assert isinstance(precip, RainEffect)
-        assert precip._spawn_rate == 3.0
-        assert precip._fall_speed == 14.0
+        assert precip._spawn_rate == 1.0
+        assert precip._fall_speed == 4.67
         assert precip._droplet_size == 2
 
 
@@ -449,6 +453,6 @@ class TestRainWeatherAnimation:
         assert icon_layer is not None
         precip = icon_layer.anim._precip
         assert isinstance(precip, RainEffect)
-        assert precip._spawn_rate == 6.0
-        assert precip._fall_speed == 20.0
+        assert precip._spawn_rate == 2.0
+        assert precip._fall_speed == 6.67
         assert precip._droplet_size == 3

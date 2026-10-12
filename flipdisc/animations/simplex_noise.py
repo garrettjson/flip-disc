@@ -17,7 +17,7 @@ class SimplexNoise(Animation):
 
         # Parameters
         self.scale = 4.0  # Spatial scale of the noise
-        self.step_size = 0.05  # Speed of animation
+        self.speed = 1.0  # Noise-time units per second
         self.i = 0.0  # Current time offset
 
         # Precompute coordinate arrays
@@ -31,14 +31,14 @@ class SimplexNoise(Animation):
 
         if "scale" in params:
             self.scale = max(0.1, float(params["scale"]))
-        if "step_size" in params:
-            self.step_size = float(params["step_size"])
+        if "speed" in params:
+            self.speed = float(params["speed"])
 
     @override
     def step(self, dt: float) -> None:
         """Advance noise animation through time."""
         self.current_time += dt
-        self.i += self.step_size
+        self.i += self.speed * dt
 
     @override
     def render_gray(self) -> np.ndarray:

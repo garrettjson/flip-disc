@@ -87,12 +87,11 @@ def _preview(args: argparse.Namespace) -> int:
     if args.seed is not None:
         anim.reset(seed=args.seed)
 
-    dt = 1.0 / 60.0
-    steps_per_frame = max(1, int(60 / args.fps))
+    # Same step the pipeline uses: one display interval per frame
+    dt = 1.0 / (args.fps or cfg.refresh_rate)
 
     for i in range(args.frames):
-        for _ in range(steps_per_frame):
-            anim.step(dt)
+        anim.step(dt)
 
         gray = anim.render_gray()
         processed = apply_processing_pipeline(gray, anim.processing_steps)
@@ -142,7 +141,7 @@ def main(argv: list[str] | None = None) -> int:
         "--frames", "-n", type=int, default=5, help="Number of frames (default: 5)"
     )
     p_preview.add_argument(
-        "--fps", type=float, default=20.0, help="Simulation FPS (default: 20)"
+        "--fps", type=float, help="Frames per second (default: config refresh_rate)"
     )
     p_preview.add_argument("--seed", type=int, help="Random seed for determinism")
     p_preview.add_argument("--config", help="Path to config TOML")

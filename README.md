@@ -53,7 +53,7 @@ panel_type = "28x7"     # "7x7", "14x7", or "28x7"
 columns = 1              # horizontal panel count (28*1 = 28)
 rows = 4                 # vertical panel count (7*4 = 28)
 refresh_rate = 20.0      # frames per second paced by the server
-buffer_duration = 0.5    # seconds of frames the buffer can hold
+buffer_duration = 1.0    # seconds of frames the buffer can hold
 # Optional base address for the first panel (panels are addressed row-major)
 address_base = 1
 

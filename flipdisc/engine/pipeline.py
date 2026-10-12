@@ -175,7 +175,6 @@ class DisplayPipeline:
         """Background thread: step animation, apply post-processing, enqueue frames."""
         try:
             anim: Animation | None = None
-            sim_dt = 1.0 / 60.0
 
             while not self._stop_event.is_set():
                 anim = self._process_requests(anim)
@@ -191,7 +190,8 @@ class DisplayPipeline:
                     continue
 
                 try:
-                    anim.step(sim_dt)
+                    # One frame of animation per frame of display time
+                    anim.step(self.frame_interval)
                     gray_frame = anim.render_gray()
                     processed = apply_processing_pipeline(
                         gray_frame, anim.processing_steps

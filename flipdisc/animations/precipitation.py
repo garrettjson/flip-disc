@@ -51,8 +51,8 @@ class SnowEffect:
         cloud_cols_range: tuple[int, int],
         spawn_y: int,
         max_y: int,
-        spawn_rate: float = 2.0,
-        fall_speed: float = 6.0,
+        spawn_rate: float = 0.67,
+        fall_speed: float = 2.0,
     ):
         self._col_min, self._col_max = cloud_cols_range
         self._spawn_y = spawn_y
@@ -137,35 +137,35 @@ _RAIN_SHAPES_BY_SIZE = {
 
 # Per-WMO-code rain presets
 WMO_RAIN_PRESETS: dict[int, dict] = {
-    51: {"spawn_rate": 1.0, "fall_speed": 8.0, "droplet_size": 1},  # Light drizzle
-    53: {"spawn_rate": 1.5, "fall_speed": 9.0, "droplet_size": 1},  # Moderate drizzle
-    55: {"spawn_rate": 2.5, "fall_speed": 10.0, "droplet_size": 1},  # Dense drizzle
+    51: {"spawn_rate": 0.33, "fall_speed": 2.67, "droplet_size": 1},  # Light drizzle
+    53: {"spawn_rate": 0.5, "fall_speed": 3.0, "droplet_size": 1},  # Moderate drizzle
+    55: {"spawn_rate": 0.83, "fall_speed": 3.33, "droplet_size": 1},  # Dense drizzle
     56: {
-        "spawn_rate": 1.0,
-        "fall_speed": 7.0,
+        "spawn_rate": 0.33,
+        "fall_speed": 2.33,
         "droplet_size": 1,
     },  # Light freezing drizzle
     57: {
-        "spawn_rate": 2.5,
-        "fall_speed": 9.0,
+        "spawn_rate": 0.83,
+        "fall_speed": 3.0,
         "droplet_size": 1,
     },  # Dense freezing drizzle
-    61: {"spawn_rate": 2.0, "fall_speed": 12.0, "droplet_size": 2},  # Slight rain
-    63: {"spawn_rate": 3.0, "fall_speed": 14.0, "droplet_size": 2},  # Moderate rain
-    65: {"spawn_rate": 5.0, "fall_speed": 18.0, "droplet_size": 3},  # Heavy rain
+    61: {"spawn_rate": 0.67, "fall_speed": 4.0, "droplet_size": 2},  # Slight rain
+    63: {"spawn_rate": 1.0, "fall_speed": 4.67, "droplet_size": 2},  # Moderate rain
+    65: {"spawn_rate": 1.67, "fall_speed": 6.0, "droplet_size": 3},  # Heavy rain
     66: {
-        "spawn_rate": 2.0,
-        "fall_speed": 11.0,
+        "spawn_rate": 0.67,
+        "fall_speed": 3.67,
         "droplet_size": 2,
     },  # Light freezing rain
     67: {
-        "spawn_rate": 4.5,
-        "fall_speed": 16.0,
+        "spawn_rate": 1.5,
+        "fall_speed": 5.33,
         "droplet_size": 3,
     },  # Heavy freezing rain
-    80: {"spawn_rate": 2.5, "fall_speed": 14.0, "droplet_size": 2},  # Slight showers
-    81: {"spawn_rate": 4.0, "fall_speed": 16.0, "droplet_size": 3},  # Moderate showers
-    82: {"spawn_rate": 6.0, "fall_speed": 20.0, "droplet_size": 3},  # Violent showers
+    80: {"spawn_rate": 0.83, "fall_speed": 4.67, "droplet_size": 2},  # Slight showers
+    81: {"spawn_rate": 1.33, "fall_speed": 5.33, "droplet_size": 3},  # Moderate showers
+    82: {"spawn_rate": 2.0, "fall_speed": 6.67, "droplet_size": 3},  # Violent showers
 }
 
 
@@ -191,8 +191,8 @@ class RainEffect:
         cloud_cols_range: tuple[int, int],
         spawn_y: int,
         max_y: int,
-        spawn_rate: float = 3.0,
-        fall_speed: float = 14.0,
+        spawn_rate: float = 1.0,
+        fall_speed: float = 4.67,
         droplet_size: int = 2,
     ):
         self._col_min, self._col_max = cloud_cols_range
@@ -274,9 +274,9 @@ class RainEffect:
 
 # Per-WMO-code thunderstorm presets
 WMO_THUNDER_PRESETS: dict[int, dict] = {
-    95: {"strike_interval": 300.0},  # Slight/moderate thunderstorm
-    96: {"strike_interval": 180.0},  # Moderate with hail
-    99: {"strike_interval": 60.0},  # Heavy with hail
+    95: {"strike_interval": 900.0},  # Slight/moderate thunderstorm
+    96: {"strike_interval": 540.0},  # Moderate with hail
+    99: {"strike_interval": 180.0},  # Heavy with hail
 }
 
 
@@ -304,8 +304,8 @@ class LightningEffect:
         cloud_cols_range: tuple[int, int],
         spawn_y: int,
         max_y: int,
-        strike_interval: float = 300.0,
-        leader_speed: float = 40.0,
+        strike_interval: float = 900.0,
+        leader_speed: float = 13.0,
         text_row: int | None = None,
         text_max_col: int | None = None,
         display_width: int = 28,
@@ -332,7 +332,7 @@ class LightningEffect:
 
         if self._state == _LightningState.IDLE:
             # First strike fires quickly; subsequent after brief pause
-            wait = 1.0 if self._first_strike else 0.3
+            wait = 3.0 if self._first_strike else 0.9
             if self._timer >= wait:
                 self._bolt = self._generate_bolt()
                 self._leader_row = float(self._spawn_y)
@@ -348,7 +348,7 @@ class LightningEffect:
                 self._timer = 0.0
 
         elif self._state == _LightningState.FLASH_OFF:
-            if self._timer >= 0.1:
+            if self._timer >= 0.3:
                 self._state = _LightningState.HOLDING
                 self._timer = 0.0
 

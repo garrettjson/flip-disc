@@ -7,6 +7,9 @@ import numpy as np
 
 from .base import Animation, register_animation
 
+# Converts gravity in m/s^2 to px/s^2; sets how fast the swing looks
+_PIXELS_PER_METER = 11.0
+
 
 @register_animation("pendulum")
 class Pendulum(Animation):
@@ -17,8 +20,8 @@ class Pendulum(Animation):
 
         # Pendulum physics parameters
         self.length = min(width, height) * 0.4  # Pendulum length in pixels
-        self.gravity = 9.81 * 100  # Scaled for pixel units
-        self.damping = 0.995  # Air resistance
+        self.gravity = 9.81 * _PIXELS_PER_METER
+        self.damping = 0.998  # Air resistance
 
         # Pendulum state
         self.angle = math.pi / 4  # Initial angle (45 degrees)
@@ -39,7 +42,7 @@ class Pendulum(Animation):
         super().configure(**params)
 
         if "gravity" in params:
-            self.gravity = float(params["gravity"]) * 100
+            self.gravity = float(params["gravity"]) * _PIXELS_PER_METER
         if "damping" in params:
             self.damping = float(params["damping"])
         if "length" in params:

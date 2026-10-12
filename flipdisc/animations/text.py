@@ -20,7 +20,7 @@ class TextAnimation(Animation):
         self._font = load_font("standard")
         self._text_image: np.ndarray | None = None
         self._mode: str = "static"
-        self._speed: float = 20.0
+        self._speed: float = 7.0  # pixels per second
         self._loop: bool = True
         self._offset: float = 0.0
         self._error: str | None = None
