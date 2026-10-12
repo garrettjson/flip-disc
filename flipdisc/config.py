@@ -32,9 +32,9 @@ class DisplayConfig:
     serial: SerialConfig = field(default_factory=SerialConfig)
 
     # Panel grid configuration
-    panel_w: int = 14
+    panel_w: int = 28
     panel_h: int = 7
-    columns: int = 2
+    columns: int = 1
     rows: int = 4
     address_base: int = 1
 
@@ -100,7 +100,7 @@ def _parse_config(data: dict) -> DisplayConfig:
         serial_section = data.get("serial", {})
 
         # Parse panel dimensions from panel_type string
-        panel_type = display_section.get("panel_type", "14x7")
+        panel_type = display_section.get("panel_type", "28x7")
         try:
             panel_w, panel_h = map(int, panel_type.split("x"))
         except ValueError as e:
@@ -119,7 +119,7 @@ def _parse_config(data: dict) -> DisplayConfig:
             serial=serial_config,
             panel_w=panel_w,
             panel_h=panel_h,
-            columns=display_section.get("columns", 2),
+            columns=display_section.get("columns", 1),
             rows=display_section.get("rows", 4),
             address_base=display_section.get("address_base", 1),
         )
