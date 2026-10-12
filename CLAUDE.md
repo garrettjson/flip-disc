@@ -45,17 +45,18 @@ From the manufacturer's manual and protocol sheet; the full reference is `docs/h
 
 ## Design Intent
 
-The first two bullets are goals stated by the owner; some are not yet true of the code. Ask before proposing something that contradicts them.
+Goals stated by the owner; some are not yet true of the code. Ask before proposing something that contradicts them.
 
 - **The display's frame rate drives the animation.** One presenter tick = one frame requested = the animation advances by one display interval. (Today the step is a hard-coded 1/60 s and frames are queued 0.5 s ahead — see "Things That Will Bite You".)
 - **Plenty of compute headroom.** The target is a Raspberry Pi (model undecided), with heavier simulation-style animations planned. A frame should cost a small fraction of the frame interval (50–100 ms at 10–20 fps), on the Pi, not just on the dev machine (an Intel Mac).
-- **A larger refactor is being considered and is currently paused; nothing about it is decided, including the language.** Don't start structural changes to `engine/`, `animations/base.py`, or the API boundary without checking what has been agreed.
 
-Analysis so far (October 2026) — findings and a recommendation, not decisions:
+Decisions the owner has made about the refactor (October 2026):
 
-- Measured on the dev Mac, every animation costs under 3 ms per frame except `simplex_noise` (~27 ms, inside the `opensimplex` library) and `fluid` (~100–190 ms, per-particle Python loops).
-- Recommendation on the table: keep Python for the engine and compile loop-heavy simulation kernels (Numba first; a Rust extension as the sturdier fallback) rather than rewrite. A rough Numba sketch of the fluid math ran in ~3.5 ms. Numba no longer ships Intel-Mac wheels after 0.62.x.
-- Other open-source AlfaZeta controllers (Node, Python, Go) report baud rate, not CPU, as their bottleneck, and nearly all run at 57600.
+- **Python for everything, for the time being.** A rewrite in another language was considered and set aside.
+- **Performance work comes last.** No Numba or other compiled kernels until the structural work is done, even though `fluid` (~100–190 ms per frame) and `simplex_noise` (~27 ms) are too slow today; every other animation costs under 3 ms.
+- **Animations will declare their parameters** (type, default, range) so the API can validate them and the web UI can build its controls from the schema. Not built yet.
+- **Keep a frame buffer of about one second**, not a single-frame handoff.
+- Don't make other structural changes to `engine/`, `animations/base.py`, or the API boundary without checking what has been agreed.
 
 ---
 
@@ -93,7 +94,7 @@ Before calling a change done: run the tests, run ruff on the files you touched, 
 
 - **Generator thread** steps the animation, applies its `processing_steps`, and pushes frames into `queue.Queue(maxsize=refresh_rate * buffer_duration)`. It blocks on `put(timeout=0.05)` when full — natural backpressure.
 - **Presenter** (async task) pulls one frame per tick at `refresh_rate`, splits it into panels, encodes, writes to serial, and feeds the preview queue. Frames identical to the last one written are **not** re-sent (no needless disc pulses), and `frames_presented` only counts frames actually written.
-- **Cross-thread requests** are plain attribute swaps picked up by the generator on its next iteration: `_anim_request` (switch; drains the queue), `_configure_request`, `_reset_requested`. So `set_animation` / `configure_animation` / `reset` return before the change is applied, and errors raised while applying them never reach the HTTP caller.
+- **Cross-thread requests** go through one ordered queue (`_requests`) that the generator empties at the top of each iteration: `switch` (drains the frame queue once the new animation is built), `configure`, and `reset`. So `set_animation` / `configure_animation` / `reset` return before the change is applied; errors raised while applying them are recorded in `get_status().last_error` instead of reaching the caller.
 
 ### DisplayPipeline public API
 
@@ -104,7 +105,7 @@ All async except `get_status()`, `get_last_frame_bits()`, `set_preview_callback(
 - `set_animation(name, params)` — switch animation
 - `configure_animation(params)` — update params on the running animation in place
 - `reset()` — reset current animation state
-- `get_status()` -> `PipelineStatus(running, playing, frames_presented, buffer_capacity)`
+- `get_status()` -> `PipelineStatus(running, playing, frames_presented, buffer_capacity, animation, last_error)`
 - `get_last_frame_bits()` -> last written frame
 - `set_preview_callback(cb)` — single callback, used by the WebSocket preview
 - `set_refresh_rate(fps)` / `reconnect_serial()` — runtime config
@@ -165,7 +166,7 @@ class WeatherDashboard(ComposedAnimation):
 
 Verified behaviors that are easy to trip over. Delete an entry when you fix it.
 
-- **Exceptions on the generator thread kill it silently.** An unknown animation name, or a `configure()` that raises (e.g. `clip` with an unknown `name` -> `KeyError`), is logged as "Generator thread crashed" and the thread exits; the API has already returned 200 and the display freezes until the server restarts. `configure()` must not raise on bad input.
+- **Animation errors are reported through `/status`, not the HTTP response.** An unknown animation name is rejected with a 400. Anything that fails later on the generator thread — a `configure()` that raises, a constructor that fails, a `step()` that throws — is logged and recorded in `pipeline.last_error` on `GET /status`, while the request that caused it has already returned 200. A failed switch or configure leaves the current animation running; an animation that raises while running is dropped (`animation` becomes `null`) and the display holds its last frame until the next successful switch.
 - **Simulation time is not wall-clock time.** The generator calls `step(1/60)` exactly once per produced frame. At 20 fps the sim advances 1/3 s per real second, so speeds in "units per second" run at 1/3 of nominal on the display. Only some animations scale by `dt` at all: `text`, `wireframe_cube`, `pendulum`, `fluid`, and the `weather` precipitation effects do; `bouncing_dot`, `life`, and `simplex_noise` advance a fixed amount per `step()` call and ignore `dt`; `clock` reads `datetime.now()`. The `preview` CLI takes 3 steps per printed frame, so it shows motion ~3× faster than the display does.
 - **Clip playback** advances `fps / 60` clip frames per presented frame — a clip needs `fps = 60` to show one clip frame per display frame.
 - **Clips are GIFs** listed in `assets/clips/clips.toml` (create with `flipdisc/clips/importer.py`). Some docstrings still say `.npz`. No clips are checked in.
@@ -198,7 +199,7 @@ Run with `uv run python <script>` from the repo root. To see what the server is 
 
 - Composed animation shows nothing → check each layer: `print_frame(layer.anim.render_gray())` for `layer in anim._layers`
 - Clip shows nothing → `ClipAnimation._clip is None` means `configure(name=...)` wasn't called
-- Display frozen after an API call → look for "Generator thread crashed" in the server log
+- Display frozen or unchanged after an API call → check `last_error` and `animation` in `GET /status`, then the server log for the traceback
 
 ---
 

@@ -16,7 +16,7 @@ One Python process runs three things:
 | `GeneratorThread` (daemon thread) | The **generator**: owns the animation object and produces frames | `engine/pipeline.py` `_generator_loop` |
 | aioserial's executor | Blocking serial writes, awaited by the presenter | `hardware/serial.py` |
 
-The animation object is created, configured, stepped, and rendered **only on the generator thread**. The event loop never touches it; it communicates through a queue and three request slots (§4).
+The animation object is created, configured, stepped, and rendered **only on the generator thread**. The event loop never touches it; it communicates through the frame queue and a request queue (§4).
 
 ## 2. Startup
 
@@ -24,7 +24,7 @@ The animation object is created, configured, stepped, and rendered **only on the
 
 1. `load_config(path)` reads the TOML into a `DisplayConfig`. With no `--config`, it looks for `./config.toml`, then `./flipdisc.toml`, then falls back to built-in defaults. Only `[display]` and `[serial]` are read.
 2. `DisplayPipeline(cfg)` builds the serial transport (mock unless `serial.mock = false`), the `ProtocolEncoder`, and the frame queue with capacity `max(1, int(refresh_rate * buffer_duration))` — 10 frames with the defaults.
-3. `pipeline.start("bouncing_dot")` connects serial, starts the generator thread, and starts the presenter task. **Nothing is displayed yet**: the generator waits until `play()` is called, which happens on the first `POST /anim/{name}`.
+3. `pipeline.start("bouncing_dot")` connects serial, queues the initial animation as the generator's first request, starts the generator thread, and starts the presenter task. **Nothing is displayed yet**: the generator waits until `play()` is called, which happens on the first `POST /anim/{name}`.
 4. uvicorn serves the API.
 
 `--reload` takes a different path: uvicorn imports `flipdisc.app:create_asgi_app` as a factory and manages the pipeline through a lifespan hook. The factory is called with no arguments, so in reload mode `--config` and `--log-level` are not passed through (config is discovered from the working directory).
@@ -50,15 +50,17 @@ queue.put(frame) ───────► queue.Queue(maxsize=10) ────�
 
 Each iteration, in order:
 
-1. If not playing, wait up to 50 ms and retry.
-2. If an animation switch was requested: drain the frame queue, build the new animation with `get_animation(name, cfg.width, cfg.height)`, apply its params.
-3. If a configure was requested: `anim.configure(**params)`.
-4. If a reset was requested: `anim.reset()`.
-5. `anim.step(1/60)`, then `anim.render_gray()`.
-6. `apply_processing_pipeline(gray, anim.processing_steps)` (`gfx/postprocessing.py`): each named step in order. The default is `("binarize",)`, a strict `> 0.5` threshold producing a bool array. `None` skips processing — `ClipAnimation` and every `ComposedAnimation` (including `weather`) put **float32** 0/1 frames on the queue.
-7. `queue.put(frame, timeout=0.05)`, retried until there is room or the pipeline stops.
+1. Apply every pending control request, in the order they were made (§4).
+2. If not playing, wait up to 50 ms and retry.
+3. If there is no animation (none has been built successfully, or the last one failed while running), wait 50 ms and retry.
+4. `anim.step(1/60)`, then `anim.render_gray()`.
+5. `apply_processing_pipeline(gray, anim.processing_steps)` (`gfx/postprocessing.py`): each named step in order. The default is `("binarize",)`, a strict `> 0.5` threshold producing a bool array. `None` skips processing — `ClipAnimation` and every `ComposedAnimation` (including `weather`) put **float32** 0/1 frames on the queue.
+6. `queue.put(frame, timeout=0.05)`, retried until there is room or the pipeline stops.
 
-The whole loop is inside one `try/except Exception` that logs "Generator thread crashed" and **exits the thread**. Nothing restarts it.
+Animation code can raise anything, so the thread has two crash barriers, both of which log the traceback and record a message for `get_status().last_error`:
+
+- **Applying a request.** A failed switch or configure leaves the running animation untouched (a switch only drains the frame queue after the replacement has been built and configured).
+- **Stepping and rendering.** The broken animation is dropped; the thread idles and the display holds its last frame until a switch succeeds.
 
 Consequences worth knowing:
 
@@ -93,19 +95,20 @@ Byte-level details and timings are in `docs/hardware.md` §6–7.
 
 ## 4. Control path: API → generator
 
-HTTP handlers run on the event loop and call `DisplayPipeline` methods. None of them touch the animation; they set a slot the generator reads at the top of its next iteration:
+HTTP handlers run on the event loop and call `DisplayPipeline` methods. None of them touch the animation; they hand a request to the generator, which applies it at the top of its next iteration:
 
-| Pipeline method | Slot | Applied by generator as |
+| Pipeline method | Handoff | Applied by generator as |
 |---|---|---|
-| `set_animation(name, params)` | `_anim_request` | drain queue, construct, configure |
-| `configure_animation(params)` | `_configure_request` | `anim.configure(**params)` |
-| `reset()` | `_reset_requested` | `anim.reset()` |
+| `set_animation(name, params)` | `_requests` ← `("switch", …)` | construct, configure, then drain the frame queue |
+| `configure_animation(params)` | `_requests` ← `("configure", …)` | `anim.configure(**params)` |
+| `reset()` | `_requests` ← `("reset", None)` | `anim.reset()` |
 | `play()` / `pause()` | `_play_event` | run / idle |
 
-These are plain attribute assignments with no lock or queue, so:
+All three request kinds go onto one `queue.SimpleQueue` and are applied in order, so:
 
-- The HTTP response is sent **before** the change is applied, and an error while applying it cannot reach the caller.
-- Each slot holds **one** pending request. Two `configure` calls arriving before the generator's next iteration means the first is overwritten and lost.
+- The HTTP response is sent **before** the change is applied. An unknown animation name is caught up front (`AnimationError` → 400); any later failure shows up only in `last_error` on `GET /status`.
+- Requests are not lost or reordered: a switch followed immediately by a configure applies both, to the new animation.
+- `last_error` is cleared by the next successful switch, or by a later success of the same kind of request.
 - `POST /animations/stop` only pauses the generator; the presenter keeps running and plays out whatever is queued.
 - `set_refresh_rate` changes the presenter's interval only. The queue capacity was fixed at construction.
 
@@ -137,7 +140,7 @@ Assets are found by **working-directory-relative paths** (`assets/text/fonts.tom
 
 ## 8. Errors
 
-`exceptions.py` defines `FlipDiscError` with `ConfigurationError`, `SerialConnectionError`, `HardwareError`, `AnimationError`, and `FrameError`. Lower layers raise these with context; API routes translate `AnimationError` to 400 and other `FlipDiscError`s to 500. Because animation construction and configuration happen on the generator thread, in practice the routes rarely see those errors — see §3 and §4.
+`exceptions.py` defines `FlipDiscError` with `ConfigurationError`, `SerialConnectionError`, `HardwareError`, `AnimationError`, and `FrameError`. Lower layers raise these with context; API routes translate `AnimationError` to 400 and other `FlipDiscError`s to 500. Because animation construction and configuration happen on the generator thread, the routes only see an unknown animation name; later failures are reported through `last_error` — see §3 and §4.
 
 ## 9. Tests
 

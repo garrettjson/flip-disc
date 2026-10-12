@@ -75,6 +75,8 @@ class ApiServer:
                     "playing": st.playing,
                     "frames_presented": st.frames_presented,
                     "buffer_capacity": st.buffer_capacity,
+                    "animation": st.animation,
+                    "last_error": st.last_error,
                     "serial_connected": self.pipeline.serial.is_connected(),
                 },
                 "config": {
