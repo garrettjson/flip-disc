@@ -5,10 +5,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from PIL import Image
+from skimage.io import imsave
 
+from flipdisc.animations.base import get_animation, register_animation
 from flipdisc.animations.bouncing_dot import BouncingDot
 from flipdisc.animations.clip import ClipAnimation, _blit_fit
 from flipdisc.animations.composed import ComposedAnimation, _blit_region
+from flipdisc.animations.image import ImageAnimation
 from flipdisc.animations.params import Param
 from flipdisc.clips.importer import create_clip_from_animation
 from flipdisc.clips.loader import ClipData, list_clips, load_clip
@@ -426,8 +429,6 @@ def test_composed_animation_reset():
 
 
 def test_composed_compose_method():
-    from flipdisc.animations.bouncing_dot import BouncingDot
-
     anim = ComposedAnimation(56, 7)
     dot1 = BouncingDot(28, 7)
     dot2 = BouncingDot(28, 7)
@@ -462,8 +463,6 @@ def test_composed_compose_replaces_layers():
     )
     assert len(anim._layers) == 1
 
-    from flipdisc.animations.bouncing_dot import BouncingDot
-
     anim.compose([(BouncingDot(56, 7), {"id": "new", "x": 0, "y": 0})])
     assert len(anim._layers) == 1
     assert anim._layers[0].id == "new"
@@ -471,8 +470,6 @@ def test_composed_compose_replaces_layers():
 
 def test_composed_subclass_pattern():
     """Verify the primary authoring pattern: register a ComposedAnimation subclass."""
-    from flipdisc.animations.base import get_animation, register_animation
-    from flipdisc.animations.bouncing_dot import BouncingDot
 
     @register_animation("_test_composed_sub")
     class _TestScene(ComposedAnimation):
@@ -567,8 +564,6 @@ def test_composed_blend_add_via_dotted_key():
 def test_composed_blend_add_result():
     """Both layers on — result should have pixels from both."""
     anim = ComposedAnimation(56, 7)
-    from flipdisc.animations.bouncing_dot import BouncingDot
-
     dot1 = BouncingDot(56, 7)
     dot1.x, dot1.y = 0, 0
 
@@ -630,8 +625,6 @@ def test_composed_layer_visible_false_via_json():
 
 def test_composed_layer_visible_toggle_via_dotted_key():
     anim = ComposedAnimation(56, 7)
-    from flipdisc.animations.bouncing_dot import BouncingDot
-
     dot = BouncingDot(56, 7)
     dot.x, dot.y = 5, 3
     anim.compose([(dot, {"id": "dot", "x": 0, "y": 0})])
@@ -656,8 +649,6 @@ def test_composed_layer_visible_toggle_via_dotted_key():
 
 
 def test_image_animation_no_src_returns_zeros():
-    from flipdisc.animations.image import ImageAnimation
-
     anim = ImageAnimation(56, 7)
     frame = anim.render_gray()
     assert frame.shape == (7, 56)
@@ -665,10 +656,6 @@ def test_image_animation_no_src_returns_zeros():
 
 
 def test_image_animation_configure_src(tmp_path):
-    from skimage.io import imsave
-
-    from flipdisc.animations.image import ImageAnimation
-
     # Create a test PNG: all-white 56×7
     img = np.ones((7, 56), dtype=np.float32)
     png_path = tmp_path / "white.png"
@@ -681,10 +668,6 @@ def test_image_animation_configure_src(tmp_path):
 
 
 def test_image_animation_render_shape(tmp_path):
-    from skimage.io import imsave
-
-    from flipdisc.animations.image import ImageAnimation
-
     img = np.ones((7, 56), dtype=np.float32)
     png_path = tmp_path / "white.png"
     imsave(str(png_path), (img * 255).astype(np.uint8))
@@ -697,15 +680,11 @@ def test_image_animation_render_shape(tmp_path):
 
 
 def test_image_animation_step_advances_time():
-    from flipdisc.animations.image import ImageAnimation
-
     anim = ImageAnimation(56, 7)
     anim.step(0.1)
     assert anim.current_time == pytest.approx(0.1)
 
 
 def test_image_animation_processing_steps():
-    from flipdisc.animations.image import ImageAnimation
-
     anim = ImageAnimation(56, 7)
     assert anim.processing_steps == ("binarize",)

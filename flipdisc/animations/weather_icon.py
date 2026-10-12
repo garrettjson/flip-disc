@@ -52,9 +52,7 @@ _FALLBACK = "cloudy"
 # For the precipitation settings, None means "use the preset for the WMO code".
 ICON_PARAMS = (
     # Not strict: an unrecognized condition falls back to the cloud icon
-    Param(
-        "condition", str, _FALLBACK, choices=tuple(_CONDITION_FILES), strict=False
-    ),
+    Param("condition", str, _FALLBACK, choices=tuple(_CONDITION_FILES), strict=False),
     Param("wmo_code", int, None, min=0, max=99, nullable=True),
     Param("spawn_rate", float, None, min=0, max=20, step=0.1, unit="/s", nullable=True),
     Param(
@@ -62,7 +60,13 @@ ICON_PARAMS = (
     ),
     Param("droplet_size", int, None, min=1, max=3, unit="px", nullable=True),
     Param(
-        "strike_interval", float, None, min=0.1, max=7200, step=1, unit="s",
+        "strike_interval",
+        float,
+        None,
+        min=0.1,
+        max=7200,
+        step=1,
+        unit="s",
         nullable=True,
     ),
     Param("moon_phase", float, 0.5, min=0, max=1, step=0.05),
@@ -78,7 +82,7 @@ _MIN_PHASE = 0.13  # minimum crescent width — readable on low-res display
 _SUPERSAMPLE = 8  # render at Nx resolution then downsample for smooth edges
 
 # Sunrise/sunset constants (derived from sun.bmp geometry: content spans rows 2–13)
-_SUN_TOP_ROW = 2   # first row with content in sun.bmp
+_SUN_TOP_ROW = 2  # first row with content in sun.bmp
 _SUN_BOTTOM_ROW = 13  # last row with content in sun.bmp
 _SUN_TRAVEL = _SUN_BOTTOM_ROW - _SUN_TOP_ROW + 1  # 12 rows of vertical travel
 _SUN_HORIZON_ROW = _SUN_BOTTOM_ROW + 1  # fixed horizon just below final sun position
@@ -125,7 +129,9 @@ def _render_moon(canvas: np.ndarray, phase: float) -> None:
         else:
             term_x = hi_cx - terminator * half_w
 
-        for col in range(max(0, int(hi_cx - half_w)), min(hi_size, int(hi_cx + half_w) + 1)):
+        for col in range(
+            max(0, int(hi_cx - half_w)), min(hi_size, int(hi_cx + half_w) + 1)
+        ):
             if (col - hi_cx) ** 2 + dy**2 > hi_r * hi_r:
                 continue
 
@@ -150,7 +156,9 @@ def _render_moon(canvas: np.ndarray, phase: float) -> None:
     h = dst_y1 - dst_y0
     w = dst_x1 - dst_x0
     if h > 0 and w > 0:
-        canvas[dst_y0:dst_y1, dst_x0:dst_x1] = lo[src_y0 : src_y0 + h, src_x0 : src_x0 + w]
+        canvas[dst_y0:dst_y1, dst_x0:dst_x1] = lo[
+            src_y0 : src_y0 + h, src_x0 : src_x0 + w
+        ]
 
 
 def _build_icons() -> dict[str, np.ndarray]:
@@ -243,11 +251,7 @@ class WeatherIconAnimation(Animation):
 
         if self._condition == "rain":
             # Look up WMO preset defaults, then let explicit params override
-            preset = (
-                WMO_RAIN_PRESETS.get(wmo_code, {})
-                if wmo_code is not None
-                else {}
-            )
+            preset = WMO_RAIN_PRESETS.get(wmo_code, {}) if wmo_code is not None else {}
             self._precip = RainEffect(
                 cloud_cols_range=cols_range,
                 spawn_y=bottom_row + 1,
@@ -264,9 +268,7 @@ class WeatherIconAnimation(Animation):
             )
         elif self._condition == "thunderstorm":
             preset = (
-                WMO_THUNDER_PRESETS.get(wmo_code, {})
-                if wmo_code is not None
-                else {}
+                WMO_THUNDER_PRESETS.get(wmo_code, {}) if wmo_code is not None else {}
             )
             self._precip = LightningEffect(
                 cloud_cols_range=cols_range,
@@ -312,7 +314,7 @@ class WeatherIconAnimation(Animation):
                 dst_y1 = dst_y0 + (src_y1 - src_y0)
                 canvas[dst_y0:dst_y1, :w] = icon[src_y0:src_y1, :w]
             # Fixed horizon clips everything below the sun's final position
-            if _SUN_HORIZON_ROW < self.height:
+            if self.height > _SUN_HORIZON_ROW:
                 canvas[_SUN_HORIZON_ROW:, :] = 0.0
         else:
             icon = self.ICONS[self._condition]

@@ -349,13 +349,13 @@ class LightningEffect:
                 self._timer = 0.0
 
     # Bolt generation tuning — named so the algorithm reads clearly.
-    _INITIAL_DISPLACEMENT = 5.0   # max horizontal jitter at top level
-    _DISPLACEMENT_DECAY = 0.65    # each recursion level shrinks displacement
+    _INITIAL_DISPLACEMENT = 5.0  # max horizontal jitter at top level
+    _DISPLACEMENT_DECAY = 0.65  # each recursion level shrinks displacement
     _FORK_DISPLACEMENT_DECAY = 0.6
-    _FORK_BASE_CHANCE = 0.55      # fork probability at depth 0
-    _FORK_CHANCE_DECAY = 0.15     # subtracted per depth level
+    _FORK_BASE_CHANCE = 0.55  # fork probability at depth 0
+    _FORK_CHANCE_DECAY = 0.15  # subtracted per depth level
     _FORK_MAX_DEPTH = 4
-    _REPEL_STRENGTH = 1.5         # bias (cols) pushing forks apart
+    _REPEL_STRENGTH = 1.5  # bias (cols) pushing forks apart
 
     def _generate_bolt(self) -> dict[int, set[int]]:
         """Generate bolt using recursive midpoint displacement.
@@ -375,9 +375,12 @@ class LightningEffect:
 
         self._subdivide(
             pixels,
-            r0=self._spawn_y, c0=start_col,
-            r1=self._max_y, c1=end_col,
-            displacement=self._INITIAL_DISPLACEMENT, depth=0,
+            r0=self._spawn_y,
+            c0=start_col,
+            r1=self._max_y,
+            c1=end_col,
+            displacement=self._INITIAL_DISPLACEMENT,
+            depth=0,
         )
 
         self._bolt_max_row = max(pixels.keys()) if pixels else self._max_y
@@ -386,8 +389,10 @@ class LightningEffect:
     def _subdivide(
         self,
         pixels: dict[int, set[int]],
-        r0: int, c0: int,
-        r1: int, c1: int,
+        r0: int,
+        c0: int,
+        r1: int,
+        c1: int,
         displacement: float,
         depth: int,
         repel_col: float | None = None,
@@ -426,9 +431,7 @@ class LightningEffect:
             if delta != 0:
                 repel_bias = self._REPEL_STRENGTH * (1 if delta > 0 else -1)
             else:
-                repel_bias = rng.choice(
-                    [-self._REPEL_STRENGTH, self._REPEL_STRENGTH]
-                )
+                repel_bias = rng.choice([-self._REPEL_STRENGTH, self._REPEL_STRENGTH])
 
         offset = rng.gauss(repel_bias, clamped_disp)
         # Hard clamp: midpoint can't jump further than half_span from base
@@ -455,7 +458,11 @@ class LightningEffect:
             fork_c1 = max(1, min(self._display_width - 2, fork_c1))
 
             self._subdivide(
-                pixels, mid_r, mid_c, fork_r1, fork_c1,
+                pixels,
+                mid_r,
+                mid_c,
+                fork_r1,
+                fork_c1,
                 displacement=displacement * self._FORK_DISPLACEMENT_DECAY,
                 depth=depth + 1,
                 repel_col=float(c1),
@@ -464,19 +471,31 @@ class LightningEffect:
         # Recurse both halves of the main segment
         child_disp = displacement * self._DISPLACEMENT_DECAY
         self._subdivide(
-            pixels, r0, c0, mid_r, mid_c,
-            displacement=child_disp, depth=depth + 1,
+            pixels,
+            r0,
+            c0,
+            mid_r,
+            mid_c,
+            displacement=child_disp,
+            depth=depth + 1,
         )
         self._subdivide(
-            pixels, mid_r, mid_c, r1, c1,
-            displacement=child_disp, depth=depth + 1,
+            pixels,
+            mid_r,
+            mid_c,
+            r1,
+            c1,
+            displacement=child_disp,
+            depth=depth + 1,
         )
 
     def _rasterize(
         self,
         pixels: dict[int, set[int]],
-        r0: int, c0: int,
-        r1: int, c1: int,
+        r0: int,
+        c0: int,
+        r1: int,
+        c1: int,
     ) -> None:
         """Bresenham line rasterization between two points."""
         dr = abs(r1 - r0)
@@ -507,13 +526,9 @@ class LightningEffect:
             and col <= self._text_max_col
         )
 
-    def _place_pixel(
-        self, pixels: dict[int, set[int]], row: int, col: int
-    ) -> None:
+    def _place_pixel(self, pixels: dict[int, set[int]], row: int, col: int) -> None:
         """Place a pixel if within display bounds and outside exclusion zone."""
-        if 0 <= col < self._display_width and not self._in_exclusion_zone(
-            row, col
-        ):
+        if 0 <= col < self._display_width and not self._in_exclusion_zone(row, col):
             pixels[row].add(col)
 
     def render(self, canvas: np.ndarray) -> None:

@@ -7,8 +7,8 @@ Usage::
 
     from flipdisc.services.moon_phase import moon_phase, phase_name
 
-    p = moon_phase()           # float in [0.0, 1.0)
-    print(phase_name(p))       # e.g. "waxing_crescent"
+    p = moon_phase()  # float in [0.0, 1.0)
+    print(phase_name(p))  # e.g. "waxing_crescent"
 """
 
 from __future__ import annotations
@@ -35,27 +35,24 @@ def moon_phase(dt: datetime | None = None) -> float:
     return (days_since % SYNODIC_PERIOD) / SYNODIC_PERIOD
 
 
+_PHASE_NAMES = (
+    "new_moon",
+    "waxing_crescent",
+    "first_quarter",
+    "waxing_gibbous",
+    "full_moon",
+    "waning_gibbous",
+    "last_quarter",
+    "waning_crescent",
+)
+
+
 def phase_name(phase: float) -> str:
     """Return a human-readable name for the given phase value.
 
     Divides the cycle into 8 segments of 0.125 each.
     """
-    # Normalize to [0.0, 1.0)
-    phase = phase % 1.0
-    if phase < 0.0625:
-        return "new_moon"
-    if phase < 0.1875:
-        return "waxing_crescent"
-    if phase < 0.3125:
-        return "first_quarter"
-    if phase < 0.4375:
-        return "waxing_gibbous"
-    if phase < 0.5625:
-        return "full_moon"
-    if phase < 0.6875:
-        return "waning_gibbous"
-    if phase < 0.8125:
-        return "last_quarter"
-    if phase < 0.9375:
-        return "waning_crescent"
-    return "new_moon"
+    # Each name covers a segment centered on its nominal phase (new moon on 0.0),
+    # so shift by half a segment before bucketing
+    segment = int((phase % 1.0 + 0.0625) / 0.125) % len(_PHASE_NAMES)
+    return _PHASE_NAMES[segment]

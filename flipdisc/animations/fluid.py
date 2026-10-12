@@ -266,12 +266,14 @@ class FluidSimulation(Animation):
         # Precompute wall distances for mirror particle density correction.
         # Each particle near a wall gets density from its virtual reflection,
         # which provides the "wall pressure" missing from the truncated kernel.
-        wall_dists = np.column_stack([
-            predicted[:, 0],                  # left wall
-            self.width - predicted[:, 0],     # right wall
-            predicted[:, 1],                  # top wall
-            self.height - predicted[:, 1],    # bottom wall
-        ])
+        wall_dists = np.column_stack(
+            [
+                predicted[:, 0],  # left wall
+                self.width - predicted[:, 0],  # right wall
+                predicted[:, 1],  # top wall
+                self.height - predicted[:, 1],  # bottom wall
+            ]
+        )
         half_h = h * 0.5
         # Mirror is at 2*d; only contributes if 2*d < h, i.e. d < h/2
         wall_mask = wall_dists < half_h
@@ -286,7 +288,9 @@ class FluidSimulation(Animation):
                 _neighbors, _d, r = entry
                 diff = h - r
                 self._density[i] = self_density + k2 * np.sum(diff * diff)
-                self._near_density[i] = self_near_density + k3 * np.sum(diff * diff * diff)
+                self._near_density[i] = self_near_density + k3 * np.sum(
+                    diff * diff * diff
+                )
 
             # Add mirror particle contributions for nearby walls
             for w in range(4):

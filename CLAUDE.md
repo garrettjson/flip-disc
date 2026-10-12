@@ -71,7 +71,7 @@ Run everything **from the repo root** — fonts, clips, and config are loaded vi
 - Server: `uv run python -m flipdisc run-server --config config.toml` (add `--reload` for hot reload); UI at `http://localhost:8000/ui`, OpenAPI at `/docs`
 - Terminal preview: `uv run python -m flipdisc preview -a <name> -n 5` (`--list` for names; default params only; steps at the config's `refresh_rate`, like the display)
 
-Before calling a change done: run the tests, run ruff on the files you touched, and for anything visual look at actual frames (see Debugging below).
+Before calling a change done: run the tests, run `ruff check` and `ruff format --check` (both are clean repo-wide), and for anything visual look at actual frames (see Debugging below).
 
 ---
 
@@ -209,7 +209,7 @@ Run with `uv run python <script>` from the repo root. To see what the server is 
 
 ## Conventions
 
-- Ruff for linting and formatting (line-length 88, py311 target)
+- Ruff for linting and formatting (line-length 88, py311 target). Both `ruff check` and `ruff format --check` pass on the whole repo; keep it that way, so a new warning always means something you just wrote
 - Guard clauses and early returns over nested `if`s
 - Catch specific exception types, not `except Exception`. Broad catches are acceptable only at thread/task crash barriers, and must log.
 - Exception layering: lower layers raise typed `FlipDiscError` subclasses with context; the top level (API routes, loops) decides severity and HTTP status

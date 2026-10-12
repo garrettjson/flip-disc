@@ -39,12 +39,15 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "ICN", "PIE", "T20", "RET", "SIM", "ARG", "PTH", "ERA", "PL", "RUF"]
 ignore = ["E501", "PLR0913", "PLR0912", "PLR2004"]
+# Dimensions and ranges are written as 28×28 and 0–1 on purpose
+allowed-confusables = ["×", "–"]
 
 [tool.ruff.lint.per-file-ignores]
 "test_*.py" = ["T201", "T203"]
 "**/test_*.py" = ["T201", "T203"]
 "tests/**/*" = ["T201", "T203"]
 "**/cli.py" = ["T201", "PLC0415"]
+"**/gfx/terminal.py" = ["T201"]  # printing frames is its purpose
 
 [tool.ruff.format]
 quote-style = "double"

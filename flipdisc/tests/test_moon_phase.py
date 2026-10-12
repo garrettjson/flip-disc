@@ -37,7 +37,7 @@ class TestMoonPhase:
             phases.append(moon_phase(dt))
         for i in range(1, len(phases)):
             assert phases[i] > phases[i - 1], (
-                f"Phase should increase: {phases[i-1]} -> {phases[i]}"
+                f"Phase should increase: {phases[i - 1]} -> {phases[i]}"
             )
 
     def test_naive_datetime_treated_as_utc(self):

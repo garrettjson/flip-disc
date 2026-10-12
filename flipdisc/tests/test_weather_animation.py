@@ -213,7 +213,7 @@ class TestSnowEffect:
             effect.step(1 / 60)
         xs = [p.x for p in effect._particles]
         # Verify particles spawn at varied x positions
-        assert len({x for x in xs}) > 1, "Particles should spawn at varied x"
+        assert len(set(xs)) > 1, "Particles should spawn at varied x"
 
     def test_all_particles_fall_in_lockstep(self):
         effect = SnowEffect(

@@ -9,9 +9,7 @@ import numpy as np
 from .supersampled import SupersampledAnimation
 
 
-def _draw_line(
-    frame: np.ndarray, x0: float, y0: float, x1: float, y1: float
-) -> None:
+def _draw_line(frame: np.ndarray, x0: float, y0: float, x1: float, y1: float) -> None:
     """Draw a 1px line using Bresenham's algorithm."""
     h, w = frame.shape
     dx = abs(x1 - x0)
