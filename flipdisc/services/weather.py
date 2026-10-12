@@ -66,6 +66,19 @@ class WeatherData:
     sun_progress: float | None = None  # 0.0–1.0 during sunrise/sunset window
 
 
+def _sun_transition_progress(
+    now: datetime, event_time_str: str | None, window: int
+) -> float | None:
+    """Return normalized progress [0, 1] if now is within ±window of event, else None."""
+    if not event_time_str:
+        return None
+    event = datetime.fromisoformat(event_time_str)
+    diff = (now - event).total_seconds()
+    if not (-window <= diff <= window):
+        return None
+    return max(0.0, min(1.0, (diff + window) / (2 * window)))
+
+
 async def fetch_weather(
     latitude: float,
     longitude: float,
@@ -122,21 +135,20 @@ async def fetch_weather(
 
     if now_str and (sunrise_list or sunset_list):
         now = datetime.fromisoformat(now_str)
+        window = _SUN_TRANSITION_MINUTES * 60  # seconds
 
-        if sunrise_list and sunrise_list[0]:
-            sr = datetime.fromisoformat(sunrise_list[0])
-            window = _SUN_TRANSITION_MINUTES * 60  # seconds
-            diff = (now - sr).total_seconds()
-            if -window <= diff <= window:
-                sun_prog = max(0.0, min(1.0, (diff + window) / (2 * window)))
-                condition = "sunrise"
-
-        if sun_prog is None and sunset_list and sunset_list[0]:
-            ss = datetime.fromisoformat(sunset_list[0])
-            window = _SUN_TRANSITION_MINUTES * 60
-            diff = (now - ss).total_seconds()
-            if -window <= diff <= window:
-                sun_prog = max(0.0, min(1.0, 1.0 - (diff + window) / (2 * window)))
+        rise = _sun_transition_progress(
+            now, sunrise_list[0] if sunrise_list else None, window
+        )
+        if rise is not None:
+            sun_prog = rise
+            condition = "sunrise"
+        else:
+            sset = _sun_transition_progress(
+                now, sunset_list[0] if sunset_list else None, window
+            )
+            if sset is not None:
+                sun_prog = 1.0 - sset
                 condition = "sunset"
 
     return WeatherData(

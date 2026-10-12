@@ -83,15 +83,18 @@ class TextAnimation(Animation):
 
         self._offset += self._speed * dt
 
-        if not self._loop:
-            if self._mode == "scroll_left":
-                total = self.width + self._text_image.shape[1]
-                if self._offset >= total:
-                    self._completed = True
-            elif self._mode in {"scroll_up", "scroll_down"}:
-                total = self.height + self._text_image.shape[0]
-                if self._offset >= total:
-                    self._completed = True
+        if self._loop:
+            return
+
+        if self._mode == "scroll_left":
+            total = self.width + self._text_image.shape[1]
+        elif self._mode in {"scroll_up", "scroll_down"}:
+            total = self.height + self._text_image.shape[0]
+        else:
+            return
+
+        if self._offset >= total:
+            self._completed = True
 
     @override
     def render_gray(self) -> np.ndarray:

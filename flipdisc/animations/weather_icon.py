@@ -196,73 +196,77 @@ class WeatherIconAnimation(Animation):
         if "sun_progress" in params:
             self._sun_progress = float(params["sun_progress"])
 
-        if "condition" in params:
-            cond = str(params["condition"])
-            self._condition = cond if cond in _CONDITIONS else _FALLBACK
+        if "condition" not in params:
+            # No condition change — just forward precip params if active
+            if self._precip is not None:
+                precip_params = {}
+                if spawn_rate is not None:
+                    precip_params["spawn_rate"] = spawn_rate
+                if fall_speed is not None:
+                    precip_params["fall_speed"] = fall_speed
+                if droplet_size is not None:
+                    precip_params["droplet_size"] = droplet_size
+                if strike_interval is not None:
+                    precip_params["strike_interval"] = strike_interval
+                if precip_params:
+                    self._precip.configure(**precip_params)
+            return
 
-            if self._condition in _PRECIP_CONDITIONS:
-                icon = self.ICONS[self._condition]
-                cols_range, bottom_row = _cloud_bounds(icon)
+        cond = str(params["condition"])
+        self._condition = cond if cond in _CONDITIONS else _FALLBACK
 
-                if self._condition == "rain":
-                    # Look up WMO preset defaults, then let explicit params override
-                    preset = (
-                        WMO_RAIN_PRESETS.get(wmo_code, {})
-                        if wmo_code is not None
-                        else {}
-                    )
-                    self._precip = RainEffect(
-                        cloud_cols_range=cols_range,
-                        spawn_y=bottom_row + 1,
-                        max_y=self.height - 1,
-                        spawn_rate=spawn_rate
-                        if spawn_rate is not None
-                        else preset.get("spawn_rate", 3.0),
-                        fall_speed=fall_speed
-                        if fall_speed is not None
-                        else preset.get("fall_speed", 14.0),
-                        droplet_size=int(droplet_size)
-                        if droplet_size is not None
-                        else preset.get("droplet_size", 2),
-                    )
-                elif self._condition == "thunderstorm":
-                    preset = (
-                        WMO_THUNDER_PRESETS.get(wmo_code, {})
-                        if wmo_code is not None
-                        else {}
-                    )
-                    self._precip = LightningEffect(
-                        cloud_cols_range=cols_range,
-                        spawn_y=bottom_row + 1,
-                        max_y=self.height - 1,
-                        strike_interval=float(strike_interval)
-                        if strike_interval is not None
-                        else preset.get("strike_interval", 300.0),
-                        text_row=self.height - 8,
-                        text_max_col=12,
-                    )
-                else:
-                    self._precip = SnowEffect(
-                        cloud_cols_range=cols_range,
-                        spawn_y=bottom_row + 1,
-                        max_y=self.height - 1,
-                        spawn_rate=spawn_rate if spawn_rate is not None else 2.0,
-                        fall_speed=fall_speed if fall_speed is not None else 6.0,
-                    )
-            else:
-                self._precip = None
-        elif self._precip is not None:
-            precip_params = {}
-            if spawn_rate is not None:
-                precip_params["spawn_rate"] = spawn_rate
-            if fall_speed is not None:
-                precip_params["fall_speed"] = fall_speed
-            if droplet_size is not None:
-                precip_params["droplet_size"] = droplet_size
-            if strike_interval is not None:
-                precip_params["strike_interval"] = strike_interval
-            if precip_params:
-                self._precip.configure(**precip_params)
+        if self._condition not in _PRECIP_CONDITIONS:
+            self._precip = None
+            return
+
+        icon = self.ICONS[self._condition]
+        cols_range, bottom_row = _cloud_bounds(icon)
+
+        if self._condition == "rain":
+            # Look up WMO preset defaults, then let explicit params override
+            preset = (
+                WMO_RAIN_PRESETS.get(wmo_code, {})
+                if wmo_code is not None
+                else {}
+            )
+            self._precip = RainEffect(
+                cloud_cols_range=cols_range,
+                spawn_y=bottom_row + 1,
+                max_y=self.height - 1,
+                spawn_rate=spawn_rate
+                if spawn_rate is not None
+                else preset.get("spawn_rate", 3.0),
+                fall_speed=fall_speed
+                if fall_speed is not None
+                else preset.get("fall_speed", 14.0),
+                droplet_size=int(droplet_size)
+                if droplet_size is not None
+                else preset.get("droplet_size", 2),
+            )
+        elif self._condition == "thunderstorm":
+            preset = (
+                WMO_THUNDER_PRESETS.get(wmo_code, {})
+                if wmo_code is not None
+                else {}
+            )
+            self._precip = LightningEffect(
+                cloud_cols_range=cols_range,
+                spawn_y=bottom_row + 1,
+                max_y=self.height - 1,
+                strike_interval=float(strike_interval)
+                if strike_interval is not None
+                else preset.get("strike_interval", 300.0),
+                text_row=self.height - 8,
+                text_max_col=12,
+            )
+        else:
+            self._precip = SnowEffect(
+                cloud_cols_range=cols_range,
+                spawn_y=bottom_row + 1,
+                max_y=self.height - 1,
+                spawn_rate=spawn_rate if spawn_rate is not None else 2.0,
+                fall_speed=fall_speed if fall_speed is not None else 6.0,
+            )
 
     @override
     def step(self, dt: float) -> None:

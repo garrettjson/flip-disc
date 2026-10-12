@@ -94,9 +94,8 @@ class SnowEffect:
         col_min, col_max = self._col_min, self._col_max
         candidates = list(range(col_min, col_max + 1))
         if self._last_spawn_x is not None:
-            candidates = [c for c in candidates if abs(c - self._last_spawn_x) >= 2]
-            if not candidates:
-                candidates = list(range(col_min, col_max + 1))
+            filtered = [c for c in candidates if abs(c - self._last_spawn_x) >= 2]
+            candidates = filtered or candidates
 
         x = rng.choice(candidates)
         self._last_spawn_x = x
@@ -239,9 +238,8 @@ class RainEffect:
         col_min, col_max = self._col_min, self._col_max
         candidates = list(range(col_min, col_max + 1))
         if self._last_spawn_x is not None:
-            candidates = [c for c in candidates if abs(c - self._last_spawn_x) >= 2]
-            if not candidates:
-                candidates = list(range(col_min, col_max + 1))
+            filtered = [c for c in candidates if abs(c - self._last_spawn_x) >= 2]
+            candidates = filtered or candidates
 
         x = rng.choice(candidates)
         self._last_spawn_x = x

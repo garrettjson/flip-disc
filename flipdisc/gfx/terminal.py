@@ -29,10 +29,7 @@ def print_frame(
 
     h, w = frame.shape
 
-    if np.issubdtype(frame.dtype, np.bool_):
-        bits = frame
-    else:
-        bits = frame >= threshold
+    bits = frame if np.issubdtype(frame.dtype, np.bool_) else frame >= threshold
 
     border = "─" * w
     print(f"{label}  [{w}×{h}]" if label else f"[{w}×{h}]")

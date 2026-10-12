@@ -23,7 +23,7 @@ import numpy as np
 
 from flipdisc.animations import get_animation
 from flipdisc.config import DisplayConfig
-from flipdisc.exceptions import HardwareError
+from flipdisc.exceptions import HardwareError, SerialConnectionError
 from flipdisc.gfx.postprocessing import apply_processing_pipeline
 from flipdisc.hardware.panel_map import split_canvas_bits_to_panels
 from flipdisc.hardware.protocol import ProtocolEncoder
@@ -185,17 +185,33 @@ class DisplayPipeline:
                 except queue.Empty:
                     frame = None
 
-                if frame is not None:
-                    panel_bits_list = split_canvas_bits_to_panels(frame, self.cfg)
-                    addr_base = self.cfg.address_base
-                    batch = self.encoder.encode_batch(panel_bits_list, addr_base)
-                    await self.serial.write_frames([batch])
+                if frame is None:
+                    sleep_time = max(0.0, next_deadline - loop.time())
+                    if sleep_time > 0:
+                        await asyncio.sleep(sleep_time)
+                    continue
 
+                # Skip serial write if the frame is identical to the last
+                # one sent — avoids pulsing the mechanical display needlessly.
+                changed = self._last_frame is None or not np.array_equal(
+                    frame, self._last_frame
+                )
+
+                if changed:
+                    panel_bits_list = split_canvas_bits_to_panels(
+                        frame, self.cfg
+                    )
+                    addr_base = self.cfg.address_base
+                    batch = self.encoder.encode_batch(
+                        panel_bits_list, addr_base
+                    )
+                    await self.serial.write_frames([batch])
                     self._last_frame = frame.copy()
-                    if self._preview_queue is not None:
-                        with contextlib.suppress(asyncio.QueueFull):
-                            self._preview_queue.put_nowait(frame.copy())
                     self._presented += 1
+
+                if self._preview_queue is not None:
+                    with contextlib.suppress(asyncio.QueueFull):
+                        self._preview_queue.put_nowait(frame.copy())
 
                 # Sleep until next deadline
                 sleep_time = max(0.0, next_deadline - loop.time())
@@ -251,7 +267,7 @@ class DisplayPipeline:
                 await self._preview_task
 
         # Disconnect serial
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(SerialConnectionError, OSError):
             await self.serial.disconnect()
 
     async def play(self) -> None:
@@ -283,7 +299,7 @@ class DisplayPipeline:
         self.frame_interval = 1.0 / new_fps
 
     async def reconnect_serial(self) -> None:
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(SerialConnectionError, OSError):
             await self.serial.disconnect()
         await self.serial.connect()
 

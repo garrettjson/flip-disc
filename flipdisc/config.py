@@ -87,7 +87,7 @@ def load_config(config_path: str | None = None) -> DisplayConfig:
     try:
         with config_file.open("rb") as f:
             data = tomllib.load(f)
-    except Exception as e:
+    except (tomllib.TOMLDecodeError, OSError) as e:
         raise ConfigurationError(f"Failed to parse TOML config: {e}") from e
 
     return _parse_config(data)

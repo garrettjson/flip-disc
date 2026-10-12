@@ -153,14 +153,16 @@ class ComposedAnimation(Animation):
             self._build_layers(params["layers"])
 
         for key, val in params.items():
-            if key.startswith("layer."):
-                parts = key.split(".", 2)
-                if len(parts) == 3:
-                    _, layer_id, subkey = parts
-                    if subkey in _LAYER_FIELDS:
-                        self._set_layer_field(layer_id, subkey, val)
-                    else:
-                        self._update_layer(layer_id, {subkey: val})
+            if not key.startswith("layer."):
+                continue
+            parts = key.split(".", 2)
+            if len(parts) != 3:
+                continue
+            _, layer_id, subkey = parts
+            if subkey in _LAYER_FIELDS:
+                self._set_layer_field(layer_id, subkey, val)
+            else:
+                self._update_layer(layer_id, {subkey: val})
 
     @override
     def step(self, dt: float) -> None:
