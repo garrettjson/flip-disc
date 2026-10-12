@@ -48,9 +48,9 @@ Endpoints @`http://localhost:8000`:
 Minimum example (works with mock serial):
 ```toml
 [display]
-# Panel grid (each panel is 14x7); default canvas = 28x28
-panel_type = "14x7"     # "7x7", "14x7", or "28x7"
-columns = 2              # horizontal panel count (14*2 = 28)
+# Panel grid (each controller drives a 28x7 strip); default canvas = 28x28
+panel_type = "28x7"     # "7x7", "14x7", or "28x7"
+columns = 1              # horizontal panel count (28*1 = 28)
 rows = 4                 # vertical panel count (7*4 = 28)
 refresh_rate = 20.0      # frames per second paced by the server
 buffer_duration = 0.5    # seconds of frames the buffer can hold
@@ -66,7 +66,7 @@ mock = true
 ```
 
 Notes
-- Width = panel_w * columns, height = panel_h * rows. With 14x7 x 2x4 -> 28x28.
+- Width = panel_w * columns, height = panel_h * rows. With 28x7 x 1x4 -> 28x28.
 - 7x7 panels do not support buffered refresh; the controller sends immediate-refresh messages without a flush.
 - 14x7 and 28x7 are sent as buffered messages, then a broadcast flush is issued.
 - address_base sets the starting panel address and increments per panel in row-major order.
@@ -105,7 +105,10 @@ To add a new font, drop a BMP sprite sheet in `assets/text/` and add a matching 
 flip-disc/
 ├─ config.toml                # Example configuration (TOML)
 ├─ pyproject.toml             # Package + tooling (ruff, pytest)
-├─ CLAUDE.md                  # Context for coding agents (architecture, gotchas)
+├─ CLAUDE.md                  # Context for coding agents (orientation, gotchas)
+├─ docs/
+│  ├─ architecture.md         # How the implementation works, end to end
+│  └─ hardware.md             # AlfaZeta panel reference (wiring, DIP switches, protocol)
 ├─ assets/
 │  ├─ text/                   # Bitmap font sprite sheets + fonts.toml
 │  ├─ images/weather/         # Weather icon BMPs

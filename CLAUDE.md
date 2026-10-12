@@ -1,6 +1,18 @@
 # Flip-Disc
 
-Python flip-disc display controller for Raspberry Pi. Drives flip-dot panels over RS-485 via a FastAPI server with a threaded pipeline (Generator thread -> Presenter async task).
+Python flip-disc display controller for Raspberry Pi. Drives AlfaZeta flip-dot panels over RS-485 via a FastAPI server with a threaded pipeline (Generator thread -> Presenter async task).
+
+## Where to Look
+
+| For | Read |
+|---|---|
+| Orientation, commands, conventions, gotchas | this file |
+| How the code works today, end to end (threads, frame lifecycle, control path) | `docs/architecture.md` |
+| The panels: wiring, DIP switches, power, refresh limits, protocol, maintenance | `docs/hardware.md` |
+| Writing or changing an animation | `flipdisc/animations/CLAUDE.md` |
+| Changing protocol, panel mapping, or serial code | `flipdisc/hardware/CLAUDE.md` |
+
+When behavior or hardware knowledge changes, update the matching doc in the same change.
 
 ## What This Project Does
 
@@ -14,13 +26,36 @@ The system has three concerns:
 
 ### Display Hardware
 
-The default config (`config.toml`) is a **28×28 display** made from a 2×4 grid of 14×7 panels:
+The display is **28×28**: two AlfaZeta 14x28 XY5 panels stacked vertically, which is four controllers, each driving a strip 28 dots wide × 7 tall.
 
-- `panel_type = "14x7"`, `columns = 2`, `rows = 4` → 28px wide × 28px tall
+- Config: `panel_type = "28x7"`, `columns = 1`, `rows = 4` → addresses 1–4, top strip first (the DIP address of each strip is not yet confirmed on the hardware)
 - `refresh_rate = 20.0` fps
 - The standard font (5×7px glyphs) renders `"HELLO"` at 29px wide — 1px too wide. Use the **compact font** (3×5px) or keep text short.
 
-Wire protocol reference: `flipdisc/hardware/PROTOCOL.md`.
+### Hardware facts (AlfaZeta XY5 panels)
+
+From the manufacturer's manual and protocol sheet; the full reference is `docs/hardware.md`. Read it before touching `flipdisc/hardware/` or reasoning about frame rates.
+
+- **Refresh rate depends on how many dots change.** AlfaZeta guarantees 10 fps when every dot flips each frame and quotes about 25 fps for typical video, where only a fraction change.
+- **Baud is set by a DIP switch on each controller**: 9600, 19200, 38400, or 57600 (maximum). `config.toml` must match it and currently says 9600.
+- **The serial link is a hard budget.** A full frame is 131 bytes (4 × 32-byte strip messages + 3-byte flush): ~136 ms at 9600 baud (~7 fps), ~23 ms at 57600.
+- **Power:** 24 V; up to 680 mA per 14x28 panel while flipping; 1 A per panel recommended.
+- **The protocol is write-only** — no acknowledgement, checksum, or readback, so software can't detect a dot that failed to flip.
+- **Verification status is unrecorded.** The repo defaults to the mock transport and holds no record of a run against the physical display, so treat hardware behavior as unconfirmed unless `docs/hardware.md` says otherwise.
+
+## Design Intent
+
+The first two bullets are goals stated by the owner; some are not yet true of the code. Ask before proposing something that contradicts them.
+
+- **The display's frame rate drives the animation.** One presenter tick = one frame requested = the animation advances by one display interval. (Today the step is a hard-coded 1/60 s and frames are queued 0.5 s ahead — see "Things That Will Bite You".)
+- **Plenty of compute headroom.** The target is a Raspberry Pi (model undecided), with heavier simulation-style animations planned. A frame should cost a small fraction of the frame interval (50–100 ms at 10–20 fps), on the Pi, not just on the dev machine (an Intel Mac).
+- **A larger refactor is being considered and is currently paused; nothing about it is decided, including the language.** Don't start structural changes to `engine/`, `animations/base.py`, or the API boundary without checking what has been agreed.
+
+Analysis so far (October 2026) — findings and a recommendation, not decisions:
+
+- Measured on the dev Mac, every animation costs under 3 ms per frame except `simplex_noise` (~27 ms, inside the `opensimplex` library) and `fluid` (~100–190 ms, per-particle Python loops).
+- Recommendation on the table: keep Python for the engine and compile loop-heavy simulation kernels (Numba first; a Rust extension as the sturdier fallback) rather than rewrite. A rough Numba sketch of the fluid math ran in ~3.5 ms. Numba no longer ships Intel-Mac wheels after 0.62.x.
+- Other open-source AlfaZeta controllers (Node, Python, Go) report baud rate, not CPU, as their bottleneck, and nearly all run at 57600.
 
 ---
 
@@ -131,7 +166,7 @@ class WeatherDashboard(ComposedAnimation):
 Verified behaviors that are easy to trip over. Delete an entry when you fix it.
 
 - **Exceptions on the generator thread kill it silently.** An unknown animation name, or a `configure()` that raises (e.g. `clip` with an unknown `name` -> `KeyError`), is logged as "Generator thread crashed" and the thread exits; the API has already returned 200 and the display freezes until the server restarts. `configure()` must not raise on bad input.
-- **Simulation time is not wall-clock time.** The generator calls `step(1/60)` exactly once per produced frame. At 20 fps the sim advances 1/3 s per real second, so speeds in "units per second" run at 1/3 of nominal on the display (animations that read `datetime.now()`, like `clock`, are unaffected). The `preview` CLI takes 3 steps per printed frame, so it shows motion ~3× faster than the display does.
+- **Simulation time is not wall-clock time.** The generator calls `step(1/60)` exactly once per produced frame. At 20 fps the sim advances 1/3 s per real second, so speeds in "units per second" run at 1/3 of nominal on the display. Only some animations scale by `dt` at all: `text`, `wireframe_cube`, `pendulum`, `fluid`, and the `weather` precipitation effects do; `bouncing_dot`, `life`, and `simplex_noise` advance a fixed amount per `step()` call and ignore `dt`; `clock` reads `datetime.now()`. The `preview` CLI takes 3 steps per printed frame, so it shows motion ~3× faster than the display does.
 - **Clip playback** advances `fps / 60` clip frames per presented frame — a clip needs `fps = 60` to show one clip frame per display frame.
 - **Clips are GIFs** listed in `assets/clips/clips.toml` (create with `flipdisc/clips/importer.py`). Some docstrings still say `.npz`. No clips are checked in.
 - **`[weather]` in `config.toml` is not parsed.** The fetch loop only starts via `POST /weather/config` (the web UI does this when you start `weather`).
