@@ -18,11 +18,12 @@ Physics pipeline per substep:
 from __future__ import annotations
 
 import math
-from typing import Any, ClassVar, override
+from typing import Any, override
 
 import numpy as np
 
 from .base import Animation, register_animation
+from .params import Param
 
 # ---------------------------------------------------------------------------
 # SPH kernel constants (2D)
@@ -45,29 +46,32 @@ class FluidSimulation(Animation):
     """2D SPH fluid simulation with dual-pressure incompressibility and
     density-scatter rendering."""
 
-    _DEFAULTS: ClassVar[dict[str, Any]] = {
-        "particle_count": 150,
-        "smoothing_radius": 3.5,
-        "target_density": 0.4,
-        "pressure_multiplier": 12000.0,
-        "near_pressure_multiplier": 600.0,
-        "viscosity_strength": 0.06,
-        "gravity": 80.0,
-        "collision_damping": 0.5,
-        "substeps": 5,
-        "time_scale": 1.0 / 3.0,
-        "slosh_amplitude": 0.2,
-        "slosh_frequency": 0.15,
-        "fill_level": 0.5,
-        "render_radius": 1,
-        "density_threshold": 0.8,
-    }
+    PARAMS = (
+        Param("particle_count", int, 150, min=1, max=1000, step=10),
+        Param("smoothing_radius", float, 3.5, min=0.5, max=20, step=0.1, unit="px"),
+        Param("target_density", float, 0.4, min=0.01, max=10, step=0.05),
+        Param("pressure_multiplier", float, 12000.0, min=0, max=1e6, step=500),
+        Param("near_pressure_multiplier", float, 600.0, min=0, max=1e5, step=50),
+        Param("viscosity_strength", float, 0.06, min=0, max=5, step=0.01),
+        Param("gravity", float, 80.0, min=0, max=1000, step=5, unit="px/s²"),
+        Param("collision_damping", float, 0.5, min=0, max=1, step=0.05),
+        # Solver substeps per 1/60 s of simulated time
+        Param("substeps", int, 5, min=1, max=50),
+        # Below 1 plays the simulation in slow motion
+        Param("time_scale", float, 1 / 3, min=0.01, max=3, step=0.05),
+        Param("slosh_amplitude", float, 0.2, min=0, max=3.14, step=0.05, unit="rad"),
+        Param("slosh_frequency", float, 0.15, min=0, max=10, step=0.05, unit="Hz"),
+        Param("fill_level", float, 0.5, min=0.05, max=1, step=0.05),
+        Param("render_radius", int, 1, min=0, max=5),
+        Param("density_threshold", float, 0.8, min=0, max=10, step=0.05),
+    )
 
     def __init__(self, width: int, height: int):
         super().__init__(width, height, processing_steps=("binarize",))
 
-        for k, v in self._DEFAULTS.items():
-            setattr(self, f"_{k}", v)
+        # Each parameter is mirrored in a private attribute of the same name
+        for name, value in self.params.items():
+            setattr(self, f"_{name}", value)
 
         self._stamp = _make_render_stamp(self._render_radius)
         self._hash_size = 512
@@ -436,16 +440,12 @@ class FluidSimulation(Animation):
         return canvas
 
     @override
-    def configure(self, **params: Any) -> None:
-        super().configure(**params)
+    def on_configure(self, **params: Any) -> None:
+        for name, value in params.items():
+            setattr(self, f"_{name}", value)
 
-        rebuild = False
-        for key, default in self._DEFAULTS.items():
-            if key in params:
-                val = type(default)(params[key])
-                setattr(self, f"_{key}", val)
-                if key in ("particle_count", "fill_level"):
-                    rebuild = True
+        # Changing how much fluid there is restarts the simulation
+        rebuild = "particle_count" in params or "fill_level" in params
 
         if "render_radius" in params:
             self._stamp = _make_render_stamp(self._render_radius)

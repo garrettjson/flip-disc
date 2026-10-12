@@ -6,6 +6,7 @@ from typing import override
 import numpy as np
 
 from .base import Animation, register_animation
+from .params import Param
 
 # Converts gravity in m/s^2 to px/s^2; sets how fast the swing looks
 _PIXELS_PER_METER = 11.0
@@ -15,16 +16,26 @@ _PIXELS_PER_METER = 11.0
 class Pendulum(Animation):
     """Simple pendulum physics simulation."""
 
+    PARAMS = (
+        Param("gravity", float, 9.81, min=0.1, max=50, step=0.1, unit="m/s²"),
+        Param("damping", float, 0.998, min=0.9, max=1.0, step=0.001),
+        # None = 40% of the smaller display dimension
+        Param("length", float, None, min=1, unit="px", nullable=True),
+        Param(
+            "initial_angle", float, 0.785, min=-3.14, max=3.14, step=0.05, unit="rad"
+        ),
+    )
+
     def __init__(self, width: int, height: int):
         super().__init__(width, height, processing_steps=("dither",))
 
         # Pendulum physics parameters
         self.length = min(width, height) * 0.4  # Pendulum length in pixels
-        self.gravity = 9.81 * _PIXELS_PER_METER
-        self.damping = 0.998  # Air resistance
+        self.gravity = self.params["gravity"] * _PIXELS_PER_METER
+        self.damping = self.params["damping"]  # Air resistance
 
         # Pendulum state
-        self.angle = math.pi / 4  # Initial angle (45 degrees)
+        self.angle = self.params["initial_angle"]  # 45 degrees by default
         self.angular_velocity = 0.0
 
         # Visual parameters
@@ -37,18 +48,16 @@ class Pendulum(Animation):
         self.anchor_y = height * 0.1
 
     @override
-    def configure(self, **params):
-        """Configure pendulum parameters."""
-        super().configure(**params)
-
+    def on_configure(self, **params):
         if "gravity" in params:
-            self.gravity = float(params["gravity"]) * _PIXELS_PER_METER
+            self.gravity = params["gravity"] * _PIXELS_PER_METER
         if "damping" in params:
-            self.damping = float(params["damping"])
-        if "length" in params:
-            self.length = float(params["length"])
+            self.damping = params["damping"]
+        if params.get("length") is not None:
+            self.length = params["length"]
         if "initial_angle" in params:
-            self.angle = float(params["initial_angle"])
+            # Setting the angle restarts the swing from rest
+            self.angle = params["initial_angle"]
             self.angular_velocity = 0.0
 
     @override

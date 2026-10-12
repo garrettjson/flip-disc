@@ -17,6 +17,7 @@ from skimage.io import imread
 from flipdisc.gfx.postprocessing import downsample
 
 from .base import Animation
+from .params import Param
 from .precipitation import (
     WMO_RAIN_PRESETS,
     WMO_THUNDER_PRESETS,
@@ -46,6 +47,27 @@ _PRECIP_CONDITIONS = {"snow", "rain", "thunderstorm"}
 
 _CONDITIONS = set(_CONDITION_FILES.keys())
 _FALLBACK = "cloudy"
+
+# Shared with WeatherAnimation, which forwards these to its icon layer.
+# For the precipitation settings, None means "use the preset for the WMO code".
+ICON_PARAMS = (
+    # Not strict: an unrecognized condition falls back to the cloud icon
+    Param(
+        "condition", str, _FALLBACK, choices=tuple(_CONDITION_FILES), strict=False
+    ),
+    Param("wmo_code", int, None, min=0, max=99, nullable=True),
+    Param("spawn_rate", float, None, min=0, max=20, step=0.1, unit="/s", nullable=True),
+    Param(
+        "fall_speed", float, None, min=0, max=40, step=0.1, unit="px/s", nullable=True
+    ),
+    Param("droplet_size", int, None, min=1, max=3, unit="px", nullable=True),
+    Param(
+        "strike_interval", float, None, min=0.1, max=7200, step=1, unit="s",
+        nullable=True,
+    ),
+    Param("moon_phase", float, 0.5, min=0, max=1, step=0.05),
+    Param("sun_progress", float, 0.5, min=0, max=1, step=0.05),
+)
 
 # Moon disc rendering constants — matches existing moon.bmp bounding box
 _MOON_CENTER = (8, 21)  # (row, col)
@@ -165,12 +187,9 @@ class WeatherIconAnimation(Animation):
     Internal use only — not registered in the public animation registry.
     Used as a layer within WeatherAnimation.
 
-    Configure with:
-        condition  — one of: sunny, partly_cloudy, cloudy, rain, snow,
-                     thunderstorm, fog, moon, sunrise  (default: cloudy)
-        spawn_rate — precipitation particles per second (default 2.0)
-        fall_speed — precipitation fall speed in px/sec (default 6.0)
     """
+
+    PARAMS = ICON_PARAMS
 
     ICONS: ClassVar[dict[str, np.ndarray]] = _build_icons()
 
@@ -178,12 +197,12 @@ class WeatherIconAnimation(Animation):
         super().__init__(width, height, processing_steps=("binarize",))
         self._condition = _FALLBACK
         self._precip: SnowEffect | RainEffect | LightningEffect | None = None
-        self._moon_phase: float = 0.5  # default: full moon
-        self._sun_progress: float = 0.5  # 0=below horizon, 1=fully risen
+        self._moon_phase: float = self.params["moon_phase"]  # 0.5 = full moon
+        # 0 = below horizon, 1 = fully risen
+        self._sun_progress: float = self.params["sun_progress"]
 
     @override
-    def configure(self, **params) -> None:
-        super().configure(**params)
+    def on_configure(self, **params) -> None:
         spawn_rate = params.get("spawn_rate")
         fall_speed = params.get("fall_speed")
         droplet_size = params.get("droplet_size")
@@ -191,10 +210,10 @@ class WeatherIconAnimation(Animation):
         wmo_code = params.get("wmo_code")
 
         if "moon_phase" in params:
-            self._moon_phase = float(params["moon_phase"])
+            self._moon_phase = params["moon_phase"]
 
         if "sun_progress" in params:
-            self._sun_progress = float(params["sun_progress"])
+            self._sun_progress = params["sun_progress"]
 
         if "condition" not in params:
             # No condition change — just forward precip params if active
@@ -212,7 +231,7 @@ class WeatherIconAnimation(Animation):
                     self._precip.configure(**precip_params)
             return
 
-        cond = str(params["condition"])
+        cond = params["condition"]
         self._condition = cond if cond in _CONDITIONS else _FALLBACK
 
         if self._condition not in _PRECIP_CONDITIONS:

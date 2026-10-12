@@ -18,13 +18,16 @@ import numpy as np
 
 from .base import register_animation
 from .composed import ComposedAnimation
+from .params import Param
 from .text import TextAnimation
-from .weather_icon import WeatherIconAnimation
+from .weather_icon import ICON_PARAMS, WeatherIconAnimation
 
 # Small degree symbol: 3×3 diamond
 #  x
 # x x
 #  x
+_ICON_KEYS = tuple(p.name for p in ICON_PARAMS)
+
 _DEGREE = np.array(
     [[0, 1, 0], [1, 0, 1], [0, 1, 0]],
     dtype=np.float32,
@@ -52,9 +55,26 @@ class WeatherAnimation(ComposedAnimation):
         {"temp": 68, "condition": "cloudy"}
     """
 
+    PARAMS = (
+        Param("temp", float, None, min=-150, max=150, step=1, nullable=True),
+        # Recorded but not drawn: only the number and degree symbol are shown
+        Param("unit", str, "F", choices=("F", "C")),
+        Param("show_degree", bool, True, label="Degree symbol"),
+        # Pins the icon regardless of the condition pushed by the weather service;
+        # empty = follow the service
+        Param(
+            "override_condition",
+            str,
+            "",
+            choices=("", *(p for p in ICON_PARAMS[0].choices)),
+            nullable=True,
+        ),
+        *ICON_PARAMS,
+    )
+
     def __init__(self, width: int, height: int):
         super().__init__(width, height)
-        self._show_degree = True
+        self._show_degree = self.params["show_degree"]
         self._override_condition: str | None = None
         icon = WeatherIconAnimation(width, height)
         icon.configure(condition="cloudy")
@@ -68,36 +88,21 @@ class WeatherAnimation(ComposedAnimation):
         )
 
     @override
-    def configure(self, **params: Any) -> None:
+    def on_configure(self, **params: Any) -> None:
         if "override_condition" in params:
-            val = params["override_condition"]
-            self._override_condition: str | None = str(val) if val else None
+            self._override_condition = params["override_condition"] or None
 
-        _icon_keys = {
-            "condition",
-            "spawn_rate",
-            "fall_speed",
-            "droplet_size",
-            "wmo_code",
-            "moon_phase",
-            "strike_interval",
-            "sun_progress",
-        }
-        _trigger_keys = _icon_keys | {"override_condition"}
-        if _trigger_keys & params.keys():
-            icon_params: dict[str, Any] = {}
-            for k in _icon_keys:
-                if k in params:
-                    icon_params[k] = params[k]
+        icon_params = {k: params[k] for k in _ICON_KEYS if k in params}
+        if icon_params or "override_condition" in params:
             if self._override_condition:
                 icon_params["condition"] = self._override_condition
             self._update_layer("icon", icon_params)
-        if "temp" in params:
+        if params.get("temp") is not None:
             # Store number only — degree + unit drawn in render_gray
             self._update_layer("temp", {"text": str(int(params["temp"]))})
         if "show_degree" in params:
-            self._show_degree = bool(params["show_degree"])
-        super().configure(**params)
+            self._show_degree = params["show_degree"]
+        super().on_configure(**params)
 
     @override
     def render_gray(self) -> np.ndarray:

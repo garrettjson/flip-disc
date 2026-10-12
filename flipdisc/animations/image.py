@@ -10,6 +10,7 @@ from skimage.io import imread
 from flipdisc.animations.clip import _blit_fit
 
 from .base import Animation, register_animation
+from .params import Param
 
 
 @register_animation("image")
@@ -26,15 +27,16 @@ class ImageAnimation(Animation):
         {"layer.icon.src": "assets/images/sun.png"}
     """
 
+    PARAMS = (Param("src", str, None, nullable=True),)
+
     def __init__(self, width: int, height: int):
         super().__init__(width, height, processing_steps=("binarize",))
         self._frame: np.ndarray | None = None
 
     @override
-    def configure(self, **params) -> None:
-        super().configure(**params)
-        if "src" in params:
-            self._frame = imread(str(params["src"]), as_gray=True).astype(np.float32)
+    def on_configure(self, **params) -> None:
+        if params.get("src") is not None:
+            self._frame = imread(params["src"], as_gray=True).astype(np.float32)
 
     @override
     def step(self, dt: float) -> None:

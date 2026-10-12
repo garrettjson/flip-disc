@@ -204,8 +204,8 @@ Tips
 ## API
 
 - GET `/status`: pipeline status (running, playing, frames_presented, buffer_capacity)
-- GET `/animations`, `/fonts`, `/clips`, `/images`: available names
-- POST `/anim/{name}` (JSON body = params) -> start or switch animation
+- GET `/animations`: animation names plus each one's parameter schema; `/fonts`, `/clips`, `/images`: available names
+- POST `/anim/{name}` (JSON body = params) -> start or switch animation (400 if a parameter is unknown or invalid)
 - POST `/animations/configure` -> set params on current animation
 - POST `/animations/reset`, POST `/animations/stop`
 - GET `/fps` -> { refresh_rate }

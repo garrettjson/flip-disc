@@ -9,6 +9,7 @@ from PIL import Image
 from flipdisc.animations.bouncing_dot import BouncingDot
 from flipdisc.animations.clip import ClipAnimation, _blit_fit
 from flipdisc.animations.composed import ComposedAnimation, _blit_region
+from flipdisc.animations.params import Param
 from flipdisc.clips.importer import create_clip_from_animation
 from flipdisc.clips.loader import ClipData, list_clips, load_clip
 
@@ -480,10 +481,12 @@ def test_composed_subclass_pattern():
             dot = BouncingDot(28, 7)
             self.compose([(dot, {"id": "dot", "x": 0, "y": 0})])
 
-        def configure(self, **params):
+        PARAMS = (Param("speed_x", float, 20.0),)
+
+        def on_configure(self, **params):
             if "speed_x" in params:
                 self._update_layer("dot", {"speed_x": params["speed_x"]})
-            super().configure(**params)
+            super().on_configure(**params)
 
     scene = get_animation("_test_composed_sub", 56, 7)
     assert len(scene._layers) == 1

@@ -106,7 +106,8 @@ HTTP handlers run on the event loop and call `DisplayPipeline` methods. None of 
 
 All three request kinds go onto one `queue.SimpleQueue` and are applied in order, so:
 
-- The HTTP response is sent **before** the change is applied. An unknown animation name is caught up front (`AnimationError` → 400); any later failure shows up only in `last_error` on `GET /status`.
+- **Validation happens before handoff.** `set_animation` and `configure_animation` call `validate_params(name, params)`, which checks the request against the animation class's declared `PARAMS` without needing an instance. An unknown animation, unknown parameter, wrong type, or out-of-range value raises `AnimationError`, which the routes return as a 400. `configure_animation` validates against the animation most recently *requested*, since a switch may still be in the queue.
+- The HTTP response is sent **before** the change is applied, so anything that fails later (a missing clip or image file, a bad `layer.<id>.<key>` value, an animation bug) shows up only in `last_error` on `GET /status`.
 - Requests are not lost or reordered: a switch followed immediately by a configure applies both, to the new animation.
 - `last_error` is cleared by the next successful switch, or by a later success of the same kind of request.
 - `POST /animations/stop` only pauses the generator; the presenter keeps running and plays out whatever is queued.
@@ -117,11 +118,13 @@ All three request kinds go onto one `queue.SimpleQueue` and are applied in order
 - `WS /ws/preview` registers a callback with `set_preview_callback`. The presenter drops each frame into an `asyncio.Queue(maxsize=1)`; a consumer task fires the callback, which sets an event; the handler then sends `get_last_frame_bits()` as JSON `{width, height, bits}`.
 - **One preview client at a time.** Registering a callback replaces the previous one, and a disconnecting client clears it, which also stops the preview for any other connected client.
 - The preview shows `_last_frame`, i.e. the last frame *written to serial*, so it mirrors what the panels were told to show.
-- The UI (`web/index.html`, `web/static/app.js`) is static files with no build step. It lists animations from `GET /animations`, but the parameter controls for each animation are a hard-coded table in `getAnimationParams()`.
+- The UI (`web/index.html`, `web/static/app.js`) is static files with no build step. `GET /animations` returns the animation names and, under `params`, each one's parameter schema; the UI builds its form from that (number inputs with min/max/step, checkboxes, selects for `choices`) and shows the server's message when a value is rejected. Changing a control sends just that one parameter to `POST /animations/configure`. The only hard-coded fields are latitude and longitude for the weather fetch loop, which configure the server's data source and are not animation parameters.
 
 ## 6. Animations
 
 `animations/base.py` defines the `Animation` ABC and a module-level registry filled by `@register_animation(name)` at import time; `animations/__init__.py` imports every module so they register. `get_animation(name, w, h)` instantiates by name.
+
+Each animation declares its parameters as a `PARAMS` tuple of `Param` (`animations/params.py`). That one declaration provides the defaults (`self.params` starts from it), the validation (`Animation.configure` coerces and range-checks, then calls the subclass's `on_configure` with clean values), and the schema the API serves to the UI. `ComposedAnimation` additionally lets `layer.<id>.<key>` keys through and validates them against the target layer when they are applied.
 
 Three families:
 
@@ -137,7 +140,7 @@ Assets are found by **working-directory-relative paths** (`assets/text/fonts.tom
 
 1. The UI (or any client) starts the `weather` animation, then `POST /weather/config` with latitude/longitude. That stores the settings **in the `ApiServer` instance** (not in config, not persisted) and starts `_weather_loop`.
 2. Every `interval_seconds` (default 900), `fetch_weather` (`services/weather.py`) calls the Open-Meteo forecast API with httpx and returns a `WeatherData`: temperature, a condition name mapped from the WMO code, moon phase (`services/moon_phase.py`), and a sunrise/sunset progress value when within the transition window.
-3. The loop calls `pipeline.configure_animation({...})` with those values. It does this for **whatever animation is running**, not only `weather`; other animations ignore the unknown keys.
+3. The loop calls `pipeline.configure_animation({...})` with those values, but only while the `weather` animation is the one running (`_push_weather`); otherwise the fetched data is dropped.
 4. Fetch failures are logged as warnings and retried on the next interval.
 
 ## 8. Errors

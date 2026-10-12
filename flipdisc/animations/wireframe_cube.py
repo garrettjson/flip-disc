@@ -6,6 +6,7 @@ from typing import override
 import numpy as np
 
 from .base import register_animation
+from .params import Param
 from .supersampled import SupersampledAnimation
 
 # Unit cube vertices centered at origin
@@ -93,14 +94,21 @@ def _draw_line(
 class WireframeCube(SupersampledAnimation):
     """Rotating 3D wireframe cube, oldschool demoscene style."""
 
+    PARAMS = (
+        # Cube size as a fraction of the display
+        Param("size", float, 0.35, min=0.1, max=0.5, step=0.05),
+        Param("rotation_speed", float, 0.35, min=-5, max=5, step=0.05, unit="rad/s"),
+        # Rotation weight per axis
+        Param("axis_x", float, 1.0, min=-2, max=2, step=0.1),
+        Param("axis_y", float, 0.7, min=-2, max=2, step=0.1),
+        Param("axis_z", float, 0.3, min=-2, max=2, step=0.1),
+    )
+
     def __init__(self, width: int, height: int):
         super().__init__(width, height, supersample=2, processing_steps=("binarize",))
 
-        self.size = 0.35  # cube size as fraction of display
-        self.rotation_speed = 0.35  # radians per second
-        self.axis_x = 1.0  # rotation weight per axis
-        self.axis_y = 0.7
-        self.axis_z = 0.3
+        for name in ("size", "rotation_speed", "axis_x", "axis_y", "axis_z"):
+            setattr(self, name, self.params[name])
 
         self.angle = 0.0
 
@@ -108,19 +116,10 @@ class WireframeCube(SupersampledAnimation):
         self._thickness = self.supersample | 1
 
     @override
-    def configure(self, **params):
-        super().configure(**params)
-
-        if "size" in params:
-            self.size = max(0.1, min(0.5, float(params["size"])))
-        if "rotation_speed" in params:
-            self.rotation_speed = float(params["rotation_speed"])
-        if "axis_x" in params:
-            self.axis_x = float(params["axis_x"])
-        if "axis_y" in params:
-            self.axis_y = float(params["axis_y"])
-        if "axis_z" in params:
-            self.axis_z = float(params["axis_z"])
+    def on_configure(self, **params):
+        # Every parameter maps straight onto the attribute of the same name
+        for name, value in params.items():
+            setattr(self, name, value)
 
     @override
     def step(self, dt: float) -> None:

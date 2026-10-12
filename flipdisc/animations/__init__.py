@@ -16,14 +16,24 @@ from . import (
     weather,
     wireframe_cube,
 )
-from .base import Animation, get_animation, list_animations, register_animation
+from .base import (
+    Animation,
+    animation_schemas,
+    get_animation,
+    list_animations,
+    register_animation,
+    validate_params,
+)
 from .cadence import Cadence
+from .params import Param
 from .supersampled import SupersampledAnimation
 
 __all__ = [
     "Animation",
     "Cadence",
+    "Param",
     "SupersampledAnimation",
+    "animation_schemas",
     "bouncing_dot",
     "clip",
     "clock",
@@ -38,6 +48,7 @@ __all__ = [
     "simplex_noise",
     "supersampled",
     "text",
+    "validate_params",
     "weather",
     "wireframe_cube",
 ]

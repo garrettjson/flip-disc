@@ -7,10 +7,11 @@ from typing import override
 
 import numpy as np
 
-from flipdisc.fonts.loader import load_font
+from flipdisc.fonts.loader import list_fonts, load_font
 
 from .analog_clock import AnalogClockAnimation
 from .base import Animation, register_animation
+from .params import Param
 
 _STYLES = ("digital", "analog")
 
@@ -19,39 +20,41 @@ _STYLES = ("digital", "analog")
 class ClockAnimation(Animation):
     """Unified clock animation with digital and analog styles.
 
-    Configure with:
-        style       — "digital" (default) or "analog"
-        font        — font name, digital only (default "standard")
-        format      — "24h" (default) or "12h", digital only
-        blink_colon — bool, digital only (default False)
+    font, format and blink_colon apply to the digital style only.
     """
+
+    PARAMS = (
+        Param("style", str, "digital", choices=_STYLES),
+        Param("font", str, "standard", choices=list_fonts),
+        Param("format", str, "24h", choices=("24h", "12h")),
+        Param("blink_colon", bool, False),
+    )
 
     def __init__(self, width: int, height: int):
         super().__init__(width, height, processing_steps=("binarize",))
 
-        self._style = "digital"
+        self._style = self.params["style"]
 
         # Digital state
-        self._font_name = "standard"
-        self._font = load_font("standard")
-        self._format = "24h"
-        self._blink_colon = False
+        self._font_name = self.params["font"]
+        self._font = load_font(self._font_name)
+        self._format = self.params["format"]
+        self._blink_colon = self.params["blink_colon"]
 
         # Analog delegate
         self._analog = AnalogClockAnimation(width, height)
 
     @override
-    def configure(self, **params) -> None:
-        super().configure(**params)
-        if "style" in params and str(params["style"]) in _STYLES:
-            self._style = str(params["style"])
+    def on_configure(self, **params) -> None:
+        if "style" in params:
+            self._style = params["style"]
         if "font" in params:
-            self._font_name = str(params["font"])
+            self._font_name = params["font"]
             self._font = load_font(self._font_name)
         if "format" in params:
-            self._format = str(params["format"])
+            self._format = params["format"]
         if "blink_colon" in params:
-            self._blink_colon = bool(params["blink_colon"])
+            self._blink_colon = params["blink_colon"]
 
     @override
     def step(self, dt: float) -> None:

@@ -15,10 +15,12 @@ register with @register_animation. The API then starts it by name::
                 ]
             )
 
-        def configure(self, **params):
-            if "temp" in params:
+        PARAMS = (Param("temp", int, None, nullable=True),)
+
+        def on_configure(self, **params):
+            if params.get("temp") is not None:
                 self._update_layer("temp", {"text": str(params["temp"]) + "F"})
-            super().configure(**params)
+            super().on_configure(**params)
 
 
     # API: POST /anim/weather_dashboard {"temp": 72}
@@ -31,12 +33,27 @@ from typing import Any, override
 
 import numpy as np
 
+from flipdisc.exceptions import AnimationError
 from flipdisc.gfx.postprocessing import apply_processing_pipeline
 
-from .base import Animation, get_animation, register_animation
+from .base import Animation, get_animation, register_animation, validate_params
+from .params import Param
 
 # Layer fields managed directly on _Layer (not forwarded to sub-animation)
-_LAYER_FIELDS = {"blend", "visible"}
+_LAYER_FIELDS = {
+    "blend": Param("blend", str, "over", choices=("over", "add")),
+    "visible": Param("visible", bool, True),
+}
+
+
+def _validate_layer_spec(spec: Any) -> None:
+    """Check one entry of a ``layers`` list: shape, animation type, and params."""
+    if not isinstance(spec, dict) or "id" not in spec or "type" not in spec:
+        raise AnimationError(f"Each layer needs an 'id' and a 'type', got {spec!r}")
+    validate_params(str(spec["type"]), spec.get("params") or {})
+    for name, param in _LAYER_FIELDS.items():
+        if name in spec:
+            param.coerce(spec[name])
 
 
 def _blit_region(canvas: np.ndarray, src: np.ndarray, x: int, y: int) -> None:
@@ -107,6 +124,9 @@ class ComposedAnimation(Animation):
         {"layer.noise.blend": "add"}
     """
 
+    # Subclasses that wire their layers in __init__ replace this with their own
+    PARAMS = (Param("layers", list, None, nullable=True),)
+
     def __init__(self, width: int, height: int):
         super().__init__(width, height, processing_steps=None)
         self._layers: list[_Layer] = []
@@ -145,11 +165,25 @@ class ComposedAnimation(Animation):
             )
         self._layers = built
 
+    @classmethod
     @override
-    def configure(self, **params: Any) -> None:
-        super().configure(**params)
+    def validate_params(cls, params: dict[str, Any]) -> dict[str, Any]:
+        """Validate declared params; pass ``layer.<id>.<key>`` keys through.
 
-        if "layers" in params:
+        Dotted keys target a layer that only exists on an instance, so they
+        are checked against that layer's own schema when they are applied.
+        """
+        dotted = {k: v for k, v in params.items() if k.startswith("layer.")}
+        clean = super().validate_params(
+            {k: v for k, v in params.items() if k not in dotted}
+        )
+        for spec in clean.get("layers") or []:
+            _validate_layer_spec(spec)
+        return {**clean, **dotted}
+
+    @override
+    def on_configure(self, **params: Any) -> None:
+        if params.get("layers") is not None:
             self._build_layers(params["layers"])
 
         for key, val in params.items():
@@ -235,6 +269,5 @@ class ComposedAnimation(Animation):
         """Set a layout field (blend, visible) directly on the _Layer."""
         for layer in self._layers:
             if layer.id == layer_id:
-                current = getattr(layer, field)
-                setattr(layer, field, type(current)(val))
+                setattr(layer, field, _LAYER_FIELDS[field].coerce(val))
                 return

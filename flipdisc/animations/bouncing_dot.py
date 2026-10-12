@@ -6,38 +6,43 @@ import numpy as np
 
 from .base import Animation, register_animation
 from .cadence import Cadence
+from .params import Param
 
 
 @register_animation("bouncing_dot")
 class BouncingDot(Animation):
     """Simple bouncing dot"""
 
+    PARAMS = (
+        Param("start_x", int, 2, min=0),
+        Param("start_y", int, 5, min=0),
+        Param("speed_x", float, 20.0, min=-200, max=200, step=5, unit="px/s"),
+        Param("speed_y", float, 40.0, min=-200, max=200, step=5, unit="px/s"),
+    )
+
     def __init__(self, width: int, height: int):
         super().__init__(width, height, processing_steps=("binarize",))
 
         # Dot position (whole pixels)
-        self.x = 2
-        self.y = 5
+        self.x = min(self.params["start_x"], width - 1)
+        self.y = min(self.params["start_y"], height - 1)
 
         # Velocity in pixels per second; the sign is the direction
-        self.dx = 20.0
-        self.dy = 40.0
+        self.dx = self.params["speed_x"]
+        self.dy = self.params["speed_y"]
         self._cadence_x = Cadence()
         self._cadence_y = Cadence()
 
     @override
-    def configure(self, **params):
-        """Configure bouncing dot parameters."""
-        super().configure(**params)
-
+    def on_configure(self, **params):
         if "start_x" in params:
-            self.x = max(0, min(int(params["start_x"]), self.width - 1))
+            self.x = min(params["start_x"], self.width - 1)
         if "start_y" in params:
-            self.y = max(0, min(int(params["start_y"]), self.height - 1))
+            self.y = min(params["start_y"], self.height - 1)
         if "speed_x" in params:
-            self.dx = float(params["speed_x"])
+            self.dx = params["speed_x"]
         if "speed_y" in params:
-            self.dy = float(params["speed_y"])
+            self.dy = params["speed_y"]
 
     @override
     def step(self, dt: float) -> None:

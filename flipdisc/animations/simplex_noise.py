@@ -6,18 +6,24 @@ import numpy as np
 from opensimplex import noise3array
 
 from .base import Animation, register_animation
+from .params import Param
 
 
 @register_animation("simplex_noise")
 class SimplexNoise(Animation):
     """Animated simplex noise pattern."""
 
+    PARAMS = (
+        Param("scale", float, 4.0, min=0.1, max=50, step=0.5),
+        Param("speed", float, 1.0, min=0, max=20, step=0.2, unit="/s"),
+    )
+
     def __init__(self, width: int, height: int):
         super().__init__(width, height, processing_steps=("binarize",))
 
         # Parameters
-        self.scale = 4.0  # Spatial scale of the noise
-        self.speed = 1.0  # Noise-time units per second
+        self.scale = self.params["scale"]  # Spatial scale of the noise
+        self.speed = self.params["speed"]  # Noise-time units per second
         self.i = 0.0  # Current time offset
 
         # Precompute coordinate arrays
@@ -25,14 +31,11 @@ class SimplexNoise(Animation):
         self.y = np.arange(height)
 
     @override
-    def configure(self, **params):
-        """Configure simplex noise parameters."""
-        super().configure(**params)
-
+    def on_configure(self, **params):
         if "scale" in params:
-            self.scale = max(0.1, float(params["scale"]))
+            self.scale = params["scale"]
         if "speed" in params:
-            self.speed = float(params["speed"])
+            self.speed = params["speed"]
 
     @override
     def step(self, dt: float) -> None:

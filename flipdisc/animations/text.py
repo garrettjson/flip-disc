@@ -4,45 +4,49 @@ from typing import override
 
 import numpy as np
 
-from flipdisc.fonts.loader import load_font
+from flipdisc.fonts.loader import list_fonts, load_font
 
 from .base import Animation, register_animation
 from .cadence import Cadence
+from .params import Param
 
-_VALID_MODES = {"static", "scroll_left", "scroll_up", "scroll_down"}
+_MODES = ("static", "scroll_left", "scroll_up", "scroll_down")
 
 
 @register_animation("text")
 class TextAnimation(Animation):
     """Displays text on the flip-disc display with static and scrolling modes."""
 
+    PARAMS = (
+        Param("text", str, ""),
+        Param("mode", str, "static", choices=_MODES),
+        Param("font", str, "standard", choices=list_fonts),
+        Param("speed", float, 7.0, min=0, max=1000, step=1, unit="px/s"),
+        Param("loop", bool, True),
+        Param("align", str, "center", choices=("center", "left")),
+    )
+
     def __init__(self, width: int, height: int):
         super().__init__(width, height, processing_steps=("binarize",))
-        self._font = load_font("standard")
+        self._font = load_font(self.params["font"])
         self._text_image: np.ndarray | None = None
-        self._mode: str = "static"
-        self._speed: float = 7.0  # pixels per second
-        self._loop: bool = True
+        self._mode: str = self.params["mode"]
+        self._speed: float = self.params["speed"]  # pixels per second
+        self._loop: bool = self.params["loop"]
         self._offset: int = 0  # whole pixels scrolled
         self._scroll = Cadence()
         self._error: str | None = None
 
     @override
-    def configure(self, **params) -> None:
-        super().configure(**params)
+    def on_configure(self, **params) -> None:
         if "font" in params:
             self._font = load_font(params["font"])
         if "mode" in params:
-            mode = params["mode"]
-            if mode not in _VALID_MODES:
-                self._error = f"Invalid mode: {mode}. Must be one of {_VALID_MODES}"
-                self._text_image = None
-                return
-            self._mode = mode
+            self._mode = params["mode"]
         if "speed" in params:
-            self._speed = float(params["speed"])
+            self._speed = params["speed"]
         if "loop" in params:
-            self._loop = bool(params["loop"])
+            self._loop = params["loop"]
         if "text" in params or "mode" in params or "font" in params:
             self._rebuild()
 
@@ -54,7 +58,7 @@ class TextAnimation(Animation):
         self._scroll.reset()
         self._completed = False
 
-        text = self.params.get("text", "")
+        text = self.params["text"]
         if not text:
             return
 
@@ -111,7 +115,7 @@ class TextAnimation(Animation):
 
         if self._mode == "static":
             y0 = (self.height - ih) // 2
-            x0 = 0 if self.params.get("align") == "left" else (self.width - iw) // 2
+            x0 = 0 if self.params["align"] == "left" else (self.width - iw) // 2
             frame[y0 : y0 + ih, x0 : x0 + iw] = img
             return frame
 

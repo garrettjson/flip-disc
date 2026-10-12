@@ -16,6 +16,7 @@ from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from flipdisc.animations import animation_schemas
 from flipdisc.animations import list_animations as list_animation_names
 from flipdisc.clips.loader import _CLIPS_CONFIG, list_clips
 from flipdisc.config import DisplayConfig
@@ -26,7 +27,7 @@ from flipdisc.exceptions import (
     HardwareError,
     SerialConnectionError,
 )
-from flipdisc.fonts.loader import _FONTS_CONFIG
+from flipdisc.fonts.loader import list_fonts as list_font_names
 from flipdisc.services.weather import WeatherData, fetch_weather
 
 logger = logging.getLogger(__name__)
@@ -88,14 +89,16 @@ class ApiServer:
 
         @self.app.get("/animations")
         async def list_animations_route():
-            return {"animations": list_animation_names()}
+            return {
+                "animations": list_animation_names(),
+                # name -> list of parameter descriptions (see animations/params.py)
+                "params": animation_schemas(),
+            }
 
         @self.app.get("/fonts")
         async def list_fonts():
             try:
-                with Path(_FONTS_CONFIG).open("rb") as f:
-                    config = tomllib.load(f)
-                return {"fonts": list(config.keys())}
+                return {"fonts": list_font_names()}
             except (tomllib.TOMLDecodeError, OSError) as e:
                 logger.error(f"Error listing fonts: {e}")
                 raise HTTPException(500, f"Failed to list fonts: {e}") from e
@@ -250,18 +253,7 @@ class ApiServer:
                     self._weather_lon,
                     unit=self._weather_unit,
                 )
-                if self.pipeline.get_status().running:
-                    conf = {
-                        "temp": round(data.temp),
-                        "condition": data.condition,
-                        "unit": data.unit,
-                        "wmo_code": data.wmo_code,
-                    }
-                    if data.moon_phase is not None:
-                        conf["moon_phase"] = data.moon_phase
-                    if data.sun_progress is not None:
-                        conf["sun_progress"] = data.sun_progress
-                    await self.pipeline.configure_animation(conf)
+                await self._push_weather(data)
                 return {
                     "temp": round(data.temp),
                     "condition": data.condition,
@@ -341,6 +333,24 @@ class ApiServer:
     # Weather background loop
     # ------------------------------------------------------------------
 
+    async def _push_weather(self, data: WeatherData) -> bool:
+        """Send fetched weather to the weather animation, if that's what is showing."""
+        if self.pipeline.get_status().animation != "weather":
+            return False
+
+        conf = {
+            "temp": round(data.temp),
+            "condition": data.condition,
+            "unit": data.unit,
+            "wmo_code": data.wmo_code,
+        }
+        if data.moon_phase is not None:
+            conf["moon_phase"] = data.moon_phase
+        if data.sun_progress is not None:
+            conf["sun_progress"] = data.sun_progress
+        await self.pipeline.configure_animation(conf)
+        return True
+
     async def _weather_loop(self) -> None:
         """Periodically fetch weather and push to the running animation."""
         while True:
@@ -350,18 +360,7 @@ class ApiServer:
                     self._weather_lon,  # type: ignore[arg-type]
                     unit=self._weather_unit,
                 )
-                if self.pipeline.get_status().running:
-                    conf = {
-                        "temp": round(data.temp),
-                        "condition": data.condition,
-                        "unit": data.unit,
-                        "wmo_code": data.wmo_code,
-                    }
-                    if data.moon_phase is not None:
-                        conf["moon_phase"] = data.moon_phase
-                    if data.sun_progress is not None:
-                        conf["sun_progress"] = data.sun_progress
-                    await self.pipeline.configure_animation(conf)
+                if await self._push_weather(data):
                     logger.info(
                         f"Weather updated: {data.temp}{data.unit} {data.condition}"
                     )

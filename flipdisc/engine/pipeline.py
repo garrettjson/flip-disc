@@ -21,7 +21,7 @@ from typing import Any
 
 import numpy as np
 
-from flipdisc.animations import Animation, get_animation, list_animations
+from flipdisc.animations import Animation, get_animation, validate_params
 from flipdisc.config import DisplayConfig
 from flipdisc.exceptions import AnimationError, HardwareError, SerialConnectionError
 from flipdisc.gfx.postprocessing import apply_processing_pipeline
@@ -62,6 +62,10 @@ class DisplayPipeline:
         # Control requests (main thread -> generator thread), applied in order.
         # Each is a (kind, payload) pair; kind is "switch", "configure" or "reset".
         self._requests: queue.SimpleQueue[tuple[str, Any]] = queue.SimpleQueue()
+
+        # The animation most recently asked for; params are validated against
+        # its schema before a request is queued
+        self._requested_animation: str | None = None
 
         # Written by the generator thread, read by get_status()
         self._current_animation: str | None = None
@@ -263,14 +267,15 @@ class DisplayPipeline:
     async def start(
         self, animation: str = "bouncing_dot", params: dict[str, Any] | None = None
     ) -> None:
-        self._require_registered(animation)
+        params = validate_params(animation, params or {})
+        self._requested_animation = animation
         await self.serial.connect()
         self._running = True
 
         # Start generator thread with the initial animation as its first request
         self._stop_event.clear()
         self._requests = queue.SimpleQueue()
-        self._requests.put(("switch", (animation, params or {})))
+        self._requests.put(("switch", (animation, params)))
         self._last_error = None
         self._gen_thread = threading.Thread(
             target=self._generator_loop,
@@ -347,20 +352,21 @@ class DisplayPipeline:
     ) -> None:
         """Switch animation — the generator thread applies it on its next iteration.
 
-        Raises AnimationError for an unknown name. A failure while building or
-        configuring the new animation keeps the current one running and is
-        reported through get_status().last_error.
+        Raises AnimationError for an unknown name or invalid params. A failure
+        while building or configuring the new animation keeps the current one
+        running and is reported through get_status().last_error.
         """
-        self._require_registered(name)
-        self._requests.put(("switch", (name, params or {})))
+        params = validate_params(name, params or {})
+        self._requested_animation = name
+        self._requests.put(("switch", (name, params)))
 
     async def configure_animation(self, params: dict[str, Any]) -> None:
-        """Update params on the running animation without restarting it."""
-        self._requests.put(("configure", params))
+        """Update params on the running animation without restarting it.
 
-    @staticmethod
-    def _require_registered(name: str) -> None:
-        if name not in list_animations():
-            raise AnimationError(
-                f"Unknown animation: {name}. Available: {list_animations()}"
-            )
+        Raises AnimationError if the params don't fit the schema of the
+        animation most recently requested.
+        """
+        if self._requested_animation is None:
+            raise AnimationError("No animation has been started")
+        params = validate_params(self._requested_animation, params)
+        self._requests.put(("configure", params))

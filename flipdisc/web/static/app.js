@@ -1,7 +1,13 @@
+async function parseResponse(path, res) {
+  if (res.ok) return res.json();
+  // FastAPI puts the reason in `detail`; surface it instead of a bare status code
+  let detail = '';
+  try { detail = (await res.json()).detail || ''; } catch (_) { /* no body */ }
+  throw new Error(detail || `${path} failed: ${res.status}`);
+}
+
 async function fetchJSON(path) {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
-  return res.json();
+  return parseResponse(path, await fetch(path));
 }
 
 async function postJSON(path, payload) {
@@ -10,11 +16,18 @@ async function postJSON(path, payload) {
     headers: { 'Content-Type': 'application/json' },
     body: payload ? JSON.stringify(payload) : null,
   });
-  if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
-  return res.json();
+  return parseResponse(path, res);
 }
 
-let availableFonts = ['standard'];
+// Parameter schema per animation, served by GET /animations (see animations/params.py)
+let paramSchemas = {};
+
+// Inputs for the weather fetch loop (POST /weather/config). These configure the
+// server's data source, not the animation, so they are not part of its schema.
+const WEATHER_SOURCE_FIELDS = [
+  { name: 'latitude', label: 'Latitude', type: 'float', step: 0.01, default: 40.71 },
+  { name: 'longitude', label: 'Longitude', type: 'float', step: 0.01, default: -74.01 },
+];
 
 // UI elements
 const runningEl = document.getElementById('running');
@@ -32,6 +45,9 @@ const refreshBtn = document.getElementById('refresh');
 const canvas = document.getElementById('preview');
 const ctx = canvas.getContext('2d');
 const paramsContainer = document.getElementById('params-container');
+const paramErrorEl = document.getElementById('param-error');
+const currentAnimEl = document.getElementById('current-anim');
+const lastErrorEl = document.getElementById('last-error');
 
 function drawBits(bits, width, height) {
   if (!bits || bits.length === 0) {
@@ -55,6 +71,7 @@ function drawBits(bits, width, height) {
 
 async function loadAnimations() {
   const data = await fetchJSON('/animations');
+  paramSchemas = data.params || {};
   animSelect.innerHTML = '';
   (data.animations || []).forEach(name => {
     const opt = document.createElement('option');
@@ -64,144 +81,125 @@ async function loadAnimations() {
   updateAnimationParams();
 }
 
+// Scalar params only: structured ones (e.g. composed `layers`) have no form control
 function getAnimationParams(animationName) {
-  const params = {
-    bouncing_dot: [
-      { name: 'start_x', label: 'Start X', type: 'number', min: 0, max: 39, value: 2 },
-      { name: 'start_y', label: 'Start Y', type: 'number', min: 0, max: 27, value: 5 },
-      { name: 'speed_x', label: 'Speed X (px/s)', type: 'number', min: -100, max: 100, step: 5, value: 20 },
-      { name: 'speed_y', label: 'Speed Y (px/s)', type: 'number', min: -100, max: 100, step: 5, value: 40 }
-    ],
-    life: [
-      { name: 'density', label: 'Density', type: 'number', min: 0.1, max: 0.9, step: 0.1, value: 0.3 },
-      { name: 'pattern', label: 'Pattern', type: 'select', options: ['random', 'glider', 'blinker', 'block', 'beacon'], value: 'random' },
-      { name: 'rate', label: 'Generations/s', type: 'number', min: 1, max: 30, step: 1, value: 20 }
-    ],
-    simplex_noise: [
-      { name: 'scale', label: 'Scale', type: 'number', min: 1, max: 20, step: 0.5, value: 4.0 },
-      { name: 'speed', label: 'Speed', type: 'number', min: 0.2, max: 10, step: 0.2, value: 1.0 }
-    ],
-    wireframe_cube: [
-      { name: 'size', label: 'Size', type: 'number', min: 0.1, max: 0.5, step: 0.05, value: 0.35 },
-      { name: 'rotation_speed', label: 'Rot Speed (rad/s)', type: 'number', min: 0.05, max: 2.0, step: 0.05, value: 0.35 },
-      { name: 'axis_x', label: 'Axis X', type: 'number', min: 0, max: 2.0, step: 0.1, value: 1.0 },
-      { name: 'axis_y', label: 'Axis Y', type: 'number', min: 0, max: 2.0, step: 0.1, value: 0.7 },
-      { name: 'axis_z', label: 'Axis Z', type: 'number', min: 0, max: 2.0, step: 0.1, value: 0.3 }
-    ],
-    text: [
-      { name: 'text', label: 'Text', type: 'text', value: 'HELLO' },
-      { name: 'mode', label: 'Mode', type: 'select', options: ['static', 'scroll_left', 'scroll_up', 'scroll_down'], value: 'scroll_left' },
-      { name: 'font', label: 'Font', type: 'select', options: availableFonts, value: availableFonts[0] },
-      { name: 'speed', label: 'Speed (px/s)', type: 'number', min: 1, max: 40, step: 1, value: 7 },
-      { name: 'loop', label: 'Loop', type: 'checkbox', value: true }
-    ],
-    clock: [
-      { name: 'style', label: 'Style', type: 'select', options: ['digital', 'analog'], value: 'digital' },
-      { name: 'font', label: 'Font', type: 'select', options: availableFonts, value: availableFonts[0] },
-      { name: 'format', label: 'Format', type: 'select', options: ['24h', '12h'], value: '24h' },
-      { name: 'blink_colon', label: 'Blink Colon', type: 'checkbox', value: false }
-    ],
-    weather: [
-      { name: 'latitude', label: 'Latitude', type: 'number', step: 0.01, value: 40.71 },
-      { name: 'longitude', label: 'Longitude', type: 'number', step: 0.01, value: -74.01 },
-      { name: 'unit', label: 'Unit', type: 'select', options: ['F', 'C'], value: 'F' },
-      { name: 'show_degree', label: 'Degree Symbol', type: 'checkbox', value: true },
-      { name: 'override_condition', label: 'Condition Override', type: 'select', options: ['', 'sunny', 'partly_cloudy', 'cloudy', 'rain', 'snow', 'thunderstorm', 'fog', 'sunrise', 'sunset'], value: '', optionLabels: ['— API —', 'Sunny', 'Partly Cloudy', 'Cloudy', 'Rain', 'Snow', 'Thunderstorm', 'Fog', 'Sunrise', 'Sunset'] },
-      { name: 'sun_progress', label: 'Sun Progress', type: 'number', min: 0, max: 1, step: 0.05, value: 0.5 },
-      { name: 'spawn_rate', label: 'Precip Rate (/s)', type: 'number', min: 0.1, max: 4, step: 0.1, value: 0.7 },
-      { name: 'fall_speed', label: 'Fall Speed (px/s)', type: 'number', min: 0.5, max: 10, step: 0.1, value: 2.0 },
-      { name: 'droplet_size', label: 'Droplet Size', type: 'number', min: 1, max: 3, step: 1, value: 2 },
-      { name: 'strike_interval', label: 'Strike Interval (s)', type: 'number', min: 1, max: 1800, step: 1, value: 900 }
-    ]
-  };
-  return params[animationName] || [];
+  return (paramSchemas[animationName] || []).filter(p => p.type !== 'list');
+}
+
+function extraFields(animationName) {
+  return animationName === 'weather' ? WEATHER_SOURCE_FIELDS : [];
+}
+
+function isNumeric(param) {
+  return param.type === 'float' || param.type === 'int';
+}
+
+function buildInput(param) {
+  let input;
+  if (param.choices) {
+    input = document.createElement('select');
+    param.choices.forEach(choice => {
+      const option = document.createElement('option');
+      option.value = choice;
+      option.textContent = choice === '' ? '(none)' : choice;
+      if (choice === param.default) option.selected = true;
+      input.appendChild(option);
+    });
+  } else if (param.type === 'bool' && param.nullable) {
+    // Three states: leave unset, on, off
+    input = document.createElement('select');
+    [['', '(default)'], ['true', 'on'], ['false', 'off']].forEach(([value, text]) => {
+      const option = document.createElement('option');
+      option.value = value; option.textContent = text;
+      input.appendChild(option);
+    });
+    if (param.default !== null) input.value = String(param.default);
+  } else if (param.type === 'bool') {
+    input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = !!param.default;
+  } else if (isNumeric(param)) {
+    input = document.createElement('input');
+    input.type = 'number';
+    if (param.default !== null && param.default !== undefined) {
+      // Trim float noise such as 0.3333333333333333
+      input.value = Number(param.default.toFixed(4));
+    }
+    if (param.min !== undefined) input.min = param.min;
+    if (param.max !== undefined) input.max = param.max;
+    input.step = param.step !== undefined ? param.step : (param.type === 'int' ? 1 : 'any');
+    if (param.nullable) input.placeholder = 'auto';
+    input.style.width = '80px';
+  } else {
+    input = document.createElement('input');
+    input.type = 'text';
+    input.value = param.default ?? '';
+    input.style.width = '160px';
+  }
+  input.id = `param-${param.name}`;
+  return input;
+}
+
+// Returns undefined when the field is empty, meaning "don't send this param"
+function readInput(param) {
+  const input = document.getElementById(`param-${param.name}`);
+  if (!input) return undefined;
+  if (param.type === 'bool' && !param.nullable) return input.checked;
+  if (param.type === 'bool') return input.value === '' ? undefined : input.value === 'true';
+  if (isNumeric(param)) return input.value === '' ? undefined : parseFloat(input.value);
+  if (param.nullable && input.value === '' && !param.choices) return undefined;
+  return input.value;
+}
+
+function showParamError(message) {
+  paramErrorEl.textContent = message || '';
 }
 
 function updateAnimationParams() {
   const selectedAnim = animSelect.value;
   const params = getAnimationParams(selectedAnim);
+  const extras = extraFields(selectedAnim);
 
   paramsContainer.innerHTML = '';
+  showParamError('');
 
-  if (params.length === 0) {
+  if (params.length + extras.length === 0) {
     paramsContainer.innerHTML = '<p style="color: #666; font-style: italic;">No configurable parameters</p>';
     return;
   }
 
-  params.forEach(param => {
+  const addRow = (param, onChange) => {
     const row = document.createElement('div');
     row.style.marginBottom = '8px';
 
     const label = document.createElement('label');
-    label.textContent = param.label + ':';
+    label.textContent = param.label + (param.unit ? ` (${param.unit})` : '') + ':';
     label.style.display = 'inline-block';
-    label.style.width = '120px';
+    label.style.width = '190px';
     label.style.fontWeight = 'bold';
 
-    let input;
-    if (param.type === 'select') {
-      input = document.createElement('select');
-      param.options.forEach((opt, i) => {
-        const option = document.createElement('option');
-        option.value = opt;
-        option.textContent = param.optionLabels ? param.optionLabels[i] : opt;
-        if (opt === param.value) option.selected = true;
-        input.appendChild(option);
-      });
-    } else if (param.type === 'checkbox') {
-      input = document.createElement('input');
-      input.type = 'checkbox';
-      input.checked = param.value;
-    } else if (param.type === 'text') {
-      input = document.createElement('input');
-      input.type = 'text';
-      input.value = param.value;
-      input.style.width = '160px';
-    } else {
-      input = document.createElement('input');
-      input.type = param.type;
-      input.value = param.value;
-      if (param.min !== undefined) input.min = param.min;
-      if (param.max !== undefined) input.max = param.max;
-      if (param.step !== undefined) input.step = param.step;
-      input.style.width = '80px';
-    }
-
-    input.id = `param-${param.name}`;
-    input.addEventListener('change', updateAnimationConfig);
+    const input = buildInput(param);
+    if (onChange) input.addEventListener('change', onChange);
 
     row.appendChild(label);
     row.appendChild(input);
     paramsContainer.appendChild(row);
-  });
+  };
+
+  extras.forEach(field => addRow(field, null));
+  params.forEach(param => addRow(param, () => configureParam(param)));
 }
 
-async function updateAnimationConfig() {
-  const selectedAnim = animSelect.value;
-  if (!selectedAnim) return;
-
-  const params = getAnimationParams(selectedAnim);
-  const config = { name: selectedAnim };
-
-  params.forEach(param => {
-    const input = document.getElementById(`param-${param.name}`);
-    if (input) {
-      let value;
-      if (param.type === 'checkbox') {
-        value = input.checked;
-      } else if (param.type === 'number') {
-        value = parseFloat(input.value);
-      } else {
-        value = input.value;
-      }
-      config[param.name] = value;
-    }
-  });
+// Push one changed parameter to the running animation
+async function configureParam(param) {
+  const value = readInput(param);
+  if (value === undefined) return;
 
   try {
-    await postJSON(`/animations/configure`, config);
+    await postJSON('/animations/configure', { [param.name]: value });
+    showParamError('');
   } catch (error) {
-    console.error('Failed to configure animation:', error);
+    showParamError(error.message);
   }
 }
 
@@ -213,6 +211,8 @@ async function refreshStatus() {
   connectedEl.textContent = p.serial_connected ? 'Yes' : 'No';
   fpsEl.textContent = s.config?.refresh_rate ?? '-';
   presentedEl.textContent = (p.frames_presented ?? 0).toString();
+  currentAnimEl.textContent = p.animation ?? '-';
+  lastErrorEl.textContent = p.last_error ?? '';
   if (s.config) {
     sizeEl.textContent = `${s.config.width} x ${s.config.height}`;
   }
@@ -254,26 +254,24 @@ async function startSelected() {
   }
   const sel = animSelect.value;
 
-  const paramDefs = getAnimationParams(sel);
   const params = {};
-  paramDefs.forEach(param => {
-    const input = document.getElementById(`param-${param.name}`);
-    if (input) {
-      if (param.type === 'checkbox') params[param.name] = input.checked;
-      else if (param.type === 'number') params[param.name] = parseFloat(input.value);
-      else params[param.name] = input.value;
-    }
+  getAnimationParams(sel).forEach(param => {
+    const value = readInput(param);
+    if (value !== undefined) params[param.name] = value;
   });
 
-  await postJSON(`/anim/${encodeURIComponent(sel)}`, params);
+  try {
+    await postJSON(`/anim/${encodeURIComponent(sel)}`, params);
 
-  // For weather, also configure the background fetch loop
-  if (sel === 'weather') {
-    await postJSON('/weather/config', {
-      latitude: params.latitude,
-      longitude: params.longitude,
-      unit: params.unit,
-    });
+    // For weather, also configure the background fetch loop
+    if (sel === 'weather') {
+      const source = { unit: params.unit };
+      WEATHER_SOURCE_FIELDS.forEach(field => { source[field.name] = readInput(field); });
+      await postJSON('/weather/config', source);
+    }
+    showParamError('');
+  } catch (error) {
+    showParamError(error.message);
   }
 
   await refreshStatus();
@@ -299,10 +297,6 @@ animSelect.addEventListener('change', updateAnimationParams);
 
 // Init
 (async function init() {
-  try {
-    const data = await fetchJSON('/fonts');
-    if (data.fonts && data.fonts.length > 0) availableFonts = data.fonts;
-  } catch (_) { /* keep default */ }
   await loadAnimations();
   // Default to weather animation if available, otherwise first
   const weatherOpt = Array.from(animSelect.options).findIndex(o => o.value === 'weather');

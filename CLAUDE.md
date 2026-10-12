@@ -54,7 +54,7 @@ Decisions the owner has made about the refactor (October 2026):
 
 - **Python for everything, for the time being.** A rewrite in another language was considered and set aside.
 - **Performance work comes last.** No Numba or other compiled kernels until the structural work is done, even though `fluid` (~100–190 ms per frame) and `simplex_noise` (~27 ms) are too slow today; every other animation costs under 3 ms.
-- **Animations will declare their parameters** (type, default, range) so the API can validate them and the web UI can build its controls from the schema. Not built yet.
+- **Animations declare their parameters** (type, default, range) so the API validates them and the web UI builds its controls from the schema. Built: see `flipdisc/animations/params.py`.
 - **Keep a frame buffer of about one second**, not a single-frame handoff. (`buffer_duration = 1.0`.)
 - Don't make other structural changes to `engine/`, `animations/base.py`, or the API boundary without checking what has been agreed.
 
@@ -102,8 +102,8 @@ All async except `get_status()`, `get_last_frame_bits()`, `set_preview_callback(
 
 - `start(animation, params)` / `stop()` — lifecycle
 - `play()` / `pause()` — playback control
-- `set_animation(name, params)` — switch animation
-- `configure_animation(params)` — update params on the running animation in place
+- `set_animation(name, params)` — switch animation; raises `AnimationError` on an unknown name or invalid params
+- `configure_animation(params)` — update params on the running animation in place; validated against the schema of the animation most recently requested
 - `reset()` — reset current animation state
 - `get_status()` -> `PipelineStatus(running, playing, frames_presented, buffer_capacity, animation, last_error)`
 - `get_last_frame_bits()` -> last written frame
@@ -112,9 +112,9 @@ All async except `get_status()`, `get_last_frame_bits()`, `set_preview_callback(
 
 ### HTTP API
 
-- `GET /status`, `/animations`, `/fonts`, `/clips`, `/images`, `/fps`, `/weather/config`
-- `POST /anim/{name}` (JSON body = params) — start/switch and play
-- `POST /animations/configure` — live param update; `POST /animations/reset`; `POST /animations/stop` (pauses)
+- `GET /status`, `/animations` (names plus each animation's parameter schema), `/fonts`, `/clips`, `/images`, `/fps`, `/weather/config`
+- `POST /anim/{name}` (JSON body = params) — start/switch and play; 400 on an unknown name or invalid params
+- `POST /animations/configure` — live param update (400 on invalid params); `POST /animations/reset`; `POST /animations/stop` (pauses)
 - `POST /fps?new_fps=15`, `POST /serial/reconnect`
 - `POST /weather/config` `{latitude, longitude, unit, interval_seconds}` — starts the background fetch loop; `POST /weather/refresh`
 - `WS /ws/preview` — pushes `{width, height, bits}` JSON per frame; `GET /ui` — web UI
@@ -132,7 +132,9 @@ Interface (`flipdisc/animations/base.py`):
 - `__init__(width, height)` — call `super().__init__(width, height, processing_steps=(...))`
 - `step(dt)` — advance by dt seconds; the pipeline passes one display interval (`1 / refresh_rate`), so rates and speeds are in real units per second
 - `render_gray()` -> `np.ndarray` shape `(height, width)`, float32 in [0, 1]
-- `configure(**params)` — optional, runtime parameter changes
+- `PARAMS` — a tuple of `Param(name, type, default, min=, max=, choices=, unit=, ...)` declaring every parameter (`flipdisc/animations/params.py`). It is the single source for defaults (`self.params` starts from it), validation, and the web UI's controls.
+- `on_configure(**params)` — optional; apply changed parameters. Receives only declared keys, already coerced to their declared types and range-checked.
+- `configure(**params)` — the public entry point, implemented by the base class: validates, updates `self.params`, calls `on_configure`. Raises `AnimationError` on an unknown key or bad value. Don't override it.
 - `reset(seed=None)` / `is_complete()` — optional
 
 ### Composed animations
@@ -148,15 +150,17 @@ class WeatherDashboard(ComposedAnimation):
         temp.configure(text="--", mode="static", font="compact")
         self.compose([(temp, {"id": "temp", "x": 0, "y": 0})])
 
+    PARAMS = (Param("temp", int, None, nullable=True),)
+
     @override
-    def configure(self, **params):
-        if "temp" in params:
+    def on_configure(self, **params):
+        if params.get("temp") is not None:
             self._update_layer("temp", {"text": f"{params['temp']}F"})
-        super().configure(**params)
+        super().on_configure(**params)
 ```
 
 - Layer layout keys: `id` (required), `x`, `y`, `blend` (`"over"` replaces, `"add"` is `np.maximum`), `visible`
-- Live-update a layer: `POST /animations/configure {"layer.temp.text": "68F"}` (also `layer.<id>.visible` / `.blend`)
+- Live-update a layer: `POST /animations/configure {"layer.temp.text": "68F"}` (also `layer.<id>.visible` / `.blend`). Dotted keys skip the up-front check and are validated against the layer's own schema when applied.
 - Ad-hoc from the API: `POST /anim/composed {"layers": [{"id", "type", "x", "y", "width", "height", "params"}]}`
 - Each layer's own `processing_steps` run before blitting, so `ComposedAnimation` itself uses `processing_steps=None`
 
@@ -166,7 +170,7 @@ class WeatherDashboard(ComposedAnimation):
 
 Verified behaviors that are easy to trip over. Delete an entry when you fix it.
 
-- **Animation errors are reported through `/status`, not the HTTP response.** An unknown animation name is rejected with a 400. Anything that fails later on the generator thread — a `configure()` that raises, a constructor that fails, a `step()` that throws — is logged and recorded in `pipeline.last_error` on `GET /status`, while the request that caused it has already returned 200. A failed switch or configure leaves the current animation running; an animation that raises while running is dropped (`animation` becomes `null`) and the display holds its last frame until the next successful switch.
+- **Bad requests get a 400; failures after handoff show up in `/status`.** An unknown animation name, an unknown parameter, or a value of the wrong type or out of range is rejected before anything reaches the generator. What can still fail afterwards — a clip name that isn't in `clips.toml`, an image path that doesn't exist, a bad `layer.<id>.<key>` value, an animation bug — is logged and recorded in `pipeline.last_error` on `GET /status`, after the request has already returned 200. A failed switch or configure leaves the current animation running; an animation that raises while running is dropped (`animation` becomes `null`) and the display holds its last frame until the next successful switch.
 - **Live `configure` lags by up to `buffer_duration` (1 s).** The generator computes ahead to fill the frame buffer, so a parameter change only shows once the frames already queued have played out. Switching animations is immediate (it drains the buffer).
 - **Whole-step speeds are snapped to the frame rate.** `Cadence` rounds a requested rate to a whole number of frames per step, so at 20 fps the achievable pixel speeds are 20, 10, 6.67, 5, 4, … px/s (or 40, 60, … above one pixel per frame). A requested 13 px/s plays at 10. This is deliberate; see `flipdisc/animations/CLAUDE.md`, "Motion".
 - **A slow animation plays in slow motion.** Each produced frame advances the animation by exactly one display interval, so if frames take longer than that to compute (`fluid` does today), the display falls behind real time instead of skipping.
@@ -175,7 +179,6 @@ Verified behaviors that are easy to trip over. Delete an entry when you fix it.
 - **`GET /images`** globs `assets/images/*.png`; the only images are `assets/images/weather/*.bmp`, so it returns `[]`.
 - **`TextAnimation` fails silently in static mode** when text doesn't fit: `_text_image` is `None`, `_error` holds the reason, and the frame is blank.
 - **`binarize` is strict `> 0.5`** — a value of exactly 0.5 is off.
-- **Web UI param controls are hard-coded** in `getAnimationParams()` in `flipdisc/web/static/app.js`; an animation without an entry there (e.g. `fluid`, `pendulum`) shows "No configurable parameters".
 
 ---
 
