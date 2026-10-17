@@ -6,7 +6,7 @@ with a small facade bound to a DisplayConfig for convenient encoding.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 import numpy as np
 
@@ -42,10 +42,20 @@ class ProtocolEncoder:
     def encode_batch(
         self, panels_bits: Iterable[np.ndarray], address_base: int
     ) -> bytes:
-        msgs: list[bytes] = []
-        for idx, panel_bits in enumerate(panels_bits):
-            msgs.append(self.encode_panel(panel_bits, address=address_base + idx))
-        batch = b"".join(msgs)
+        """Encode every panel, addressed in order from address_base, then flush."""
+        panels = {address_base + i: bits for i, bits in enumerate(panels_bits)}
+        return self.encode_panels(panels)
+
+    def encode_panels(self, panels: Mapping[int, np.ndarray]) -> bytes:
+        """Encode one message per panel (keyed by address), then the flush.
+
+        Buffered panels show nothing until the flush, which refreshes every
+        controller on the line, so panels left out keep showing what they
+        were last sent.
+        """
+        batch = b"".join(
+            self.encode_panel(bits, address=address) for address, bits in panels.items()
+        )
         if self.supports_buffered:
             batch += _encode_flush()
         return batch

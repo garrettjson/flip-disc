@@ -186,9 +186,12 @@ The protocol is write-only as documented: there is no acknowledgement, checksum,
 
 ## 7. How this project drives the hardware
 
-- **One frame = one buffered message per panel + one flush.** `ProtocolEncoder.encode_batch` (`flipdisc/hardware/protocol.py`) sends `0x93` (14x7) or `0x84` (28x7) to each address in row-major order, then `0x80 0x82 0x8F`, so all panels flip together. 7x7 panels can't buffer, so they get `0x87` and no flush.
+- **One frame = one buffered message per changed panel + one flush.** `ProtocolEncoder.encode_panels` (`flipdisc/hardware/protocol.py`) sends `0x93` (14x7) or `0x84` (28x7) to each address, then `0x80 0x82 0x8F`, so all panels flip together. 7x7 panels can't buffer, so they get `0x87` and no flush.
 - **Bit packing** is in `flipdisc/hardware/formats.py` (`np.packbits(..., bitorder="little")` down each column), covered by `flipdisc/tests/test_formats.py`.
 - **Addresses** are `address_base + panel_index`.
+- **Only changed panels are sent.** The presenter compares each panel with what it was last sent and writes just the ones that differ, then the flush. The first frame after connecting or reconnecting sends every panel.
+
+**Project note — unverified on the hardware.** Sending a subset relies on two things the Protocol implies but doesn't state: a controller that receives no new data keeps its stored image across a flush (the flush "refreshes all connected displays", including ones that weren't sent anything), and re-showing that unchanged image doesn't disturb it. If strips that didn't change go blank or glitch when another strip updates, this is the cause; restoring full-frame sends is a one-line change in `DisplayPipeline._write_frame`.
 
 ### Wire time per full frame
 
@@ -198,13 +201,13 @@ A message is 4 framing bytes plus the data; a serial byte is 10 bits on the wire
 |---|---|---|---|---|---|
 | 8 × 14x7 (for comparison) | 8 × 18 + 3 = 147 | 153 ms | 77 ms | 38 ms | 26 ms |
 | 4 × 28x7 (this display, current config) | 4 × 32 + 3 = 131 | 136 ms | 68 ms | 34 ms | 23 ms |
+| One changed 28x7 strip + flush | 32 + 3 = 35 | 36 ms | 18 ms | 9 ms | 6 ms |
 
 At 9600 a full-frame stream is capped at about 7 fps, below even the Manual's 10 fps worst case. From 38400 up (about 29 fps at 38400, 44 fps at 57600) the link is faster than the default 20 fps refresh rate, so the dots, not the link, become the limit. The rate in use is whatever `[serial] baudrate` in `config.toml` says (§3).
 
 ### Known gaps between the code and the hardware
 
 - `refresh_rate` defaults to 20 fps; the Manual's guarantee for all-dots-changing content is 10 fps.
-- Every panel is re-sent whenever any pixel in the frame changes (frames identical to the previous one are skipped entirely).
 - Nothing in the code limits how many dots change per frame, staggers flips for power, or runs a maintenance routine.
 - The repo holds no record of a run against the physical display (the config defaults to the mock transport), so none of the above is confirmed on real panels.
 

@@ -93,7 +93,7 @@ Before calling a change done: run the tests, run `ruff check` and `ruff format -
 ### Pipeline
 
 - **Generator thread** steps the animation, applies its `processing_steps`, and pushes frames into `queue.Queue(maxsize=refresh_rate * buffer_duration)`. It blocks on `put(timeout=0.05)` when full — natural backpressure.
-- **Presenter** (async task) pulls one frame per tick at `refresh_rate`, splits it into panels, encodes, writes to serial, and feeds the preview queue. Frames identical to the last one written are **not** re-sent (no needless disc pulses), and `frames_presented` only counts frames actually written.
+- **Presenter** (async task) pulls one frame per tick at `refresh_rate`, splits it into panels, encodes, writes to serial, and feeds the preview queue. Only the panels whose bits changed since they were last sent are written, followed by the flush (no needless wire time or disc pulses); a frame identical to the last one writes nothing, and `frames_presented` only counts frames actually written. After `start` or `reconnect_serial` the next frame sends every panel.
 - **Cross-thread requests** go through one ordered queue (`_requests`) that the generator empties at the top of each iteration: `switch` (drains the frame queue once the new animation is built), `configure`, and `reset`. So `set_animation` / `configure_animation` / `reset` return before the change is applied; errors raised while applying them are recorded in `get_status().last_error` instead of reaching the caller.
 
 ### DisplayPipeline public API

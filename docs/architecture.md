@@ -38,9 +38,9 @@ anim.step(1/refresh_rate)
 anim.render_gray()        float32 (H, W) in [0,1]
 apply_processing_pipeline bool (H, W), or float32 0/1 if steps=None
 queue.put(frame) ───────► queue.Queue(maxsize=20) ───────► presenter tick (every 1/refresh_rate s)
-  blocks while full                                        frame == last written?  ── yes ─► skip write
-                                                           split_canvas_bits_to_panels   list of (7, panel_w)
-                                                           ProtocolEncoder.encode_batch  bytes
+  blocks while full                                        split_canvas_bits_to_panels   list of (7, panel_w)
+                                                           panels changed since sent?  ── none ─► skip write
+                                                           ProtocolEncoder.encode_panels  changed panels + flush
                                                            serial.write_frames
                                                            _last_frame = frame; frames_presented += 1
                                                            preview queue ◄── frame copy (changed or not)
@@ -73,8 +73,8 @@ Consequences worth knowing:
 Deadline-paced: `next_deadline += frame_interval` each tick, then:
 
 1. `queue.get_nowait()`. If the queue is empty, sleep to the deadline and try again — the display simply holds its last frame.
-2. Compare with `_last_frame` using `np.array_equal`. **If identical, nothing is written to serial.**
-3. Otherwise split, encode, `await serial.write_frames([batch])`, store a copy as `_last_frame`, and increment `frames_presented`.
+2. `_write_frame`: split into panels and compare each with what that panel was last sent (`_sent_panels`). **If none changed, nothing is written to serial.**
+3. Otherwise encode only the changed panels plus the flush (`ProtocolEncoder.encode_panels`), `await serial.write_frames([batch])`, record what each panel now shows, store a copy as `_last_frame`, and increment `frames_presented`. `_sent_panels` is cleared by `start` and `reconnect_serial`, so the first frame after either sends every panel.
 4. Offer a copy to the preview queue (dropped if the queue is full).
 5. Sleep until the deadline.
 
