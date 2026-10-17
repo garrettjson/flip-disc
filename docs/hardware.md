@@ -96,6 +96,13 @@ The board also has a reset button. The Manual says of every other header on the 
 
 57600 is the maximum. Every controller on a line must use the same rate, and `[serial] baudrate` in `config.toml` must match.
 
+**Project note — what baud means here.** Baud is the speed of the serial data link: how many bits per second travel down the RS-485 wire from the computer to the controllers. Each byte costs 10 bits on the wire, so 9600 baud carries about 960 bytes per second and 57600 about 5,760. It sets how quickly a frame *arrives*, not how the dots are driven: the strength and length of the pulse that flips a dot is the magnetizing time (DS#1 position 6, §5). Two consequences:
+
+- **At 9600 the wire, not the dots, is the bottleneck.** A full frame takes about 136 ms to send, so the display can't exceed about 7 fps however fast the dots could flip (§7).
+- **A faster link can mean more flips per second**, and therefore more average current, because frames arrive sooner. The 1 A per panel supply guidance in §4 already assumes the panels are driven as fast as they can go.
+
+If the computer's rate doesn't match the switches, the controllers won't read the data correctly. `[serial] baudrate` in `config.toml` is the only place the software sets the rate; to change it, set the DS#2 switches on every controller to the matching row of the table above, then edit `config.toml`. Whether this display's switches match `config.toml` has not been checked.
+
 ### DS#1 — address, magnetizing time, test mode (8 positions)
 
 The Manual numbers the positions 0–7; the physical switch is printed 1–8.
@@ -192,7 +199,7 @@ A message is 4 framing bytes plus the data; a serial byte is 10 bits on the wire
 | 8 × 14x7 (for comparison) | 8 × 18 + 3 = 147 | 153 ms | 77 ms | 38 ms | 26 ms |
 | 4 × 28x7 (this display, current config) | 4 × 32 + 3 = 131 | 136 ms | 68 ms | 34 ms | 23 ms |
 
-`config.toml` currently sets 9600 baud, which caps a full-frame stream at about 7 fps — below even the Manual's 10 fps worst case. At 57600 the wire allows about 44 fps, so the dots, not the link, become the limit.
+At 9600 a full-frame stream is capped at about 7 fps, below even the Manual's 10 fps worst case. From 38400 up (about 29 fps at 38400, 44 fps at 57600) the link is faster than the default 20 fps refresh rate, so the dots, not the link, become the limit. The rate in use is whatever `[serial] baudrate` in `config.toml` says (§3).
 
 ### Known gaps between the code and the hardware
 

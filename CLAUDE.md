@@ -37,8 +37,8 @@ The display is **28×28**: two AlfaZeta 14x28 XY5 panels stacked vertically, whi
 From the manufacturer's manual and protocol sheet; the full reference is `docs/hardware.md`. Read it before touching `flipdisc/hardware/` or reasoning about frame rates.
 
 - **Refresh rate depends on how many dots change.** AlfaZeta guarantees 10 fps when every dot flips each frame and quotes about 25 fps for typical video, where only a fraction change.
-- **Baud is set by a DIP switch on each controller**: 9600, 19200, 38400, or 57600 (maximum). `config.toml` must match it and currently says 9600.
-- **The serial link is a hard budget.** A full frame is 131 bytes (4 × 32-byte strip messages + 3-byte flush): ~136 ms at 9600 baud (~7 fps), ~23 ms at 57600.
+- **Baud is set by a DIP switch on each controller**: 9600, 19200, 38400, or 57600 (maximum). `[serial] baudrate` in `config.toml` is the one place the software sets it, and it must match the switches (positions per rate: `docs/hardware.md` §3). The switches on this display have not been checked.
+- **The serial link is a hard budget.** A full frame is 131 bytes (4 × 32-byte strip messages + 3-byte flush): ~136 ms at 9600 baud (~7 fps), ~34 ms at 38400 (~29 fps), ~23 ms at 57600.
 - **Power:** 24 V; up to 680 mA per 14x28 panel while flipping; 1 A per panel recommended.
 - **The protocol is write-only** — no acknowledgement, checksum, or readback, so software can't detect a dot that failed to flip.
 - **Verification status is unrecorded.** The repo defaults to the mock transport and holds no record of a run against the physical display, so treat hardware behavior as unconfirmed unless `docs/hardware.md` says otherwise.

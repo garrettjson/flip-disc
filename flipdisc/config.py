@@ -12,7 +12,7 @@ class SerialConfig:
     """Serial port configuration."""
 
     port: str = "/dev/ttyUSB0"
-    baudrate: int = 9600
+    baudrate: int = 38400
     timeout: float = 1.0
     mock: bool = True
 
@@ -93,38 +93,39 @@ def load_config(config_path: str | None = None) -> DisplayConfig:
     return _parse_config(data)
 
 
+def _present(section: dict, *keys: str) -> dict:
+    """The keys a TOML section actually sets.
+
+    Anything left out keeps its dataclass default, so each default is written
+    in exactly one place.
+    """
+    return {key: section[key] for key in keys if key in section}
+
+
 def _parse_config(data: dict) -> DisplayConfig:
     """Parse TOML data into DisplayConfig."""
-    try:
-        display_section = data.get("display", {})
-        serial_section = data.get("serial", {})
+    display_section = data.get("display", {})
+    serial_section = data.get("serial", {})
 
-        # Parse panel dimensions from panel_type string
-        panel_type = display_section.get("panel_type", "28x7")
+    display = _present(
+        display_section,
+        "refresh_rate",
+        "buffer_duration",
+        "columns",
+        "rows",
+        "address_base",
+    )
+    if "panel_type" in display_section:
+        panel_type = display_section["panel_type"]
         try:
-            panel_w, panel_h = map(int, panel_type.split("x"))
+            display["panel_w"], display["panel_h"] = map(int, panel_type.split("x"))
         except ValueError as e:
             raise ConfigurationError(f"Invalid panel_type format: {panel_type}") from e
 
-        serial_config = SerialConfig(
-            port=serial_section.get("port", "/dev/ttyUSB0"),
-            baudrate=serial_section.get("baudrate", 9600),
-            timeout=serial_section.get("timeout", 1.0),
-            mock=serial_section.get("mock", True),
+    try:
+        serial = SerialConfig(
+            **_present(serial_section, "port", "baudrate", "timeout", "mock")
         )
-
-        return DisplayConfig(
-            refresh_rate=display_section.get("refresh_rate", 20.0),
-            buffer_duration=display_section.get("buffer_duration", 1.0),
-            serial=serial_config,
-            panel_w=panel_w,
-            panel_h=panel_h,
-            columns=display_section.get("columns", 1),
-            rows=display_section.get("rows", 4),
-            address_base=display_section.get("address_base", 1),
-        )
-
-    except KeyError as e:
-        raise ConfigurationError(f"Missing required config key: {e}") from e
+        return DisplayConfig(serial=serial, **display)
     except (ValueError, TypeError) as e:
         raise ConfigurationError(f"Invalid config value: {e}") from e

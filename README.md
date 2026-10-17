@@ -60,7 +60,7 @@ address_base = 1
 [serial]
 # Serial transport. Use mock=true for development.
 port = "/dev/ttyUSB0"
-baudrate = 9600
+baudrate = 38400        # must match the panels' DS#2 switches (docs/hardware.md §3)
 timeout = 1.0
 mock = true
 ```
