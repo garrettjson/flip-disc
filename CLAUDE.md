@@ -53,7 +53,7 @@ Goals stated by the owner; some are not yet true of the code. Ask before proposi
 Decisions the owner has made about the refactor (October 2026):
 
 - **Python for everything, for the time being.** A rewrite in another language was considered and set aside.
-- **Performance work comes last.** No Numba or other compiled kernels until the structural work is done, even though `fluid` (~100–190 ms per frame) and `simplex_noise` (~27 ms) are too slow today; every other animation costs under 3 ms.
+- **Performance work comes last.** No Numba or other compiled kernels until the structural work is done, even though `simplex_noise` (~27 ms per frame) is too slow today. `fluid` costs about 3 ms on the dev machine (unmeasured on a Pi); every other animation costs under 3 ms.
 - **Animations declare their parameters** (type, default, range) so the API validates them and the web UI builds its controls from the schema. Built: see `flipdisc/animations/params.py`.
 - **Keep a frame buffer of about one second**, not a single-frame handoff. (`buffer_duration = 1.0`.)
 - Don't make other structural changes to `engine/`, `animations/base.py`, or the API boundary without checking what has been agreed.
@@ -173,7 +173,7 @@ Verified behaviors that are easy to trip over. Delete an entry when you fix it.
 - **Bad requests get a 400; failures after handoff show up in `/status`.** An unknown animation name, an unknown parameter, or a value of the wrong type or out of range is rejected before anything reaches the generator. What can still fail afterwards — a clip name that isn't in `clips.toml`, an image path that doesn't exist, a bad `layer.<id>.<key>` value, an animation bug — is logged and recorded in `pipeline.last_error` on `GET /status`, after the request has already returned 200. A failed switch or configure leaves the current animation running; an animation that raises while running is dropped (`animation` becomes `null`) and the display holds its last frame until the next successful switch.
 - **Live `configure` lags by up to `buffer_duration` (1 s).** The generator computes ahead to fill the frame buffer, so a parameter change only shows once the frames already queued have played out. Switching animations is immediate (it drains the buffer).
 - **Whole-step speeds are snapped to the frame rate.** `Cadence` rounds a requested rate to a whole number of frames per step, so at 20 fps the achievable pixel speeds are 20, 10, 6.67, 5, 4, … px/s (or 40, 60, … above one pixel per frame). A requested 13 px/s plays at 10. This is deliberate; see `flipdisc/animations/CLAUDE.md`, "Motion".
-- **A slow animation plays in slow motion.** Each produced frame advances the animation by exactly one display interval, so if frames take longer than that to compute (`fluid` does today), the display falls behind real time instead of skipping.
+- **A slow animation plays in slow motion.** Each produced frame advances the animation by exactly one display interval, so if frames take longer than that to compute, the display falls behind real time instead of skipping.
 - **Clips are GIFs** listed in `assets/clips/clips.toml` (create with `flipdisc/clips/importer.py`). Some docstrings still say `.npz`. No clips are checked in.
 - **`[weather]` in `config.toml` is not parsed.** The fetch loop only starts via `POST /weather/config` (the web UI does this when you start `weather`).
 - **`GET /images`** globs `assets/images/*.png`; the only images are `assets/images/weather/*.bmp`, so it returns `[]`.

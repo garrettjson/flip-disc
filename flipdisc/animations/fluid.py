@@ -1,18 +1,23 @@
-"""2D SPH fluid simulation — liquid sloshing in a tank.
+"""2D FLIP fluid simulation — liquid sloshing in a tank.
 
-Simulates a cross-section of liquid using Smoothed Particle Hydrodynamics
-(based on Sebastian Lague's approach). Below the surface = lit pixels,
-above = dark, with splash particles breaking free naturally. Gravity
-direction oscillates to drive sloshing.
+Particles carry the liquid; a grid with one cell per display pixel makes their
+velocities incompressible. After Matthias Müller's "How to write a FLIP Water
+Simulator" (Ten Minute Physics #18), vectorised in NumPy. Gravity direction
+oscillates to drive sloshing.
 
-Physics pipeline per substep:
-  1. Apply gravity → predict positions
-  2. Build spatial hash on predicted positions
-  3. Compute densities (Spiky² for density, Spiky³ for near-density)
-  4. Compute pressure forces (symmetric, dual-pressure)
-  5. Apply viscosity (Poly6-weighted velocity smoothing)
-  6. Integrate positions
-  7. Enforce boundaries
+Pipeline per substep:
+  1. Apply gravity, move particles
+  2. Push overlapping particles apart, collide with the walls
+  3. Transfer particle velocities to the grid
+  4. Solve for pressure so no fluid cell gains or loses volume, pushing
+     outward where particles have bunched up ("drift compensation")
+  5. Transfer the grid's velocity change back to the particles (FLIP),
+     blended with the grid velocity itself (PIC)
+
+The grid has a one-cell solid border, so cell (j, i) is display pixel
+(j - 1, i - 1). Velocities are staggered: `u[j, i]` is the x-velocity on the
+left face of cell (j, i), `v[j, i]` the y-velocity on its top face. y points
+down.
 """
 
 from __future__ import annotations
@@ -21,49 +26,49 @@ import math
 from typing import Any, override
 
 import numpy as np
+from scipy.linalg import solveh_banded
+from scipy.spatial import cKDTree
 
 from .base import Animation, register_animation
 from .params import Param
 
-# ---------------------------------------------------------------------------
-# SPH kernel constants (2D)
-# ---------------------------------------------------------------------------
-
-# Precomputed normalization constants, set per smoothing radius in _init_kernels
 _TWO_PI = 2.0 * math.pi
 
+# `substeps` is counted per this much simulated time
+_SUBSTEP_REFERENCE = 1 / 20
 
-def _make_render_stamp(radius: int) -> np.ndarray:
-    """Precompute a circular splat stamp for rendering."""
-    y, x = np.mgrid[-radius : radius + 1, -radius : radius + 1]
-    dist_sq = x * x + y * y
-    r_sq = (radius + 0.5) ** 2
-    return np.clip(1.0 - dist_sq / r_sq, 0.0, 1.0).astype(np.float32)
+# A dot turns on above ON and off below OFF (fractions of the packed particle
+# density), so dots at the surface don't chatter between frames
+_LIT_ON = 0.6
+_LIT_OFF = 0.4
+
+# Keeps the pressure system solvable when a body of fluid touches no air
+_REGULARIZATION = 1e-6
+
+# Push-apart finds neighbours once per substep and reuses them for both of its
+# iterations (as the reference does), so it searches this much past the
+# particle diameter to catch pairs the first iteration pushes together
+_NEIGHBOR_SLACK = 0.2
 
 
 @register_animation("fluid")
 class FluidSimulation(Animation):
-    """2D SPH fluid simulation with dual-pressure incompressibility and
-    density-scatter rendering."""
+    """2D FLIP/PIC liquid with density-threshold rendering."""
 
     PARAMS = (
-        Param("particle_count", int, 150, min=1, max=1000, step=10),
-        Param("smoothing_radius", float, 3.5, min=0.5, max=20, step=0.1, unit="px"),
-        Param("target_density", float, 0.4, min=0.01, max=10, step=0.05),
-        Param("pressure_multiplier", float, 12000.0, min=0, max=1e6, step=500),
-        Param("near_pressure_multiplier", float, 600.0, min=0, max=1e5, step=50),
-        Param("viscosity_strength", float, 0.06, min=0, max=5, step=0.01),
-        Param("gravity", float, 80.0, min=0, max=1000, step=5, unit="px/s²"),
-        Param("collision_damping", float, 0.5, min=0, max=1, step=0.05),
-        # Solver substeps per 1/60 s of simulated time
-        Param("substeps", int, 5, min=1, max=50),
-        # Below 1 plays the simulation in slow motion
-        Param("time_scale", float, 1 / 3, min=0.01, max=3, step=0.05),
-        Param("slosh_amplitude", float, 0.2, min=0, max=3.14, step=0.05, unit="rad"),
-        Param("slosh_frequency", float, 0.15, min=0, max=10, step=0.05, unit="Hz"),
+        # Changing fill_level or particle_radius restarts the simulation
         Param("fill_level", float, 0.5, min=0.05, max=1, step=0.05),
-        Param("render_radius", int, 1, min=0, max=5),
-        Param("density_threshold", float, 0.8, min=0, max=10, step=0.05),
+        Param("gravity", float, 40.0, min=0, max=500, step=5, unit="px/s²"),
+        Param("slosh_amplitude", float, 0.25, min=0, max=3.14, step=0.05, unit="rad"),
+        Param("slosh_frequency", float, 0.2, min=0, max=5, step=0.05, unit="Hz"),
+        # 1 keeps every splash (noisy), 0 is thick and calm
+        Param("flip_ratio", float, 0.7, min=0, max=1, step=0.05),
+        # Fraction of sliding speed a particle loses per substep on a wall
+        Param("wall_friction", float, 0.1, min=0, max=1, step=0.05),
+        # Solver substeps per 1/20 s of simulated time
+        Param("substeps", int, 2, min=1, max=8),
+        # Smaller means more particles per pixel
+        Param("particle_radius", float, 0.4, min=0.25, max=0.5, step=0.05, unit="px"),
     )
 
     def __init__(self, width: int, height: int):
@@ -73,331 +78,228 @@ class FluidSimulation(Animation):
         for name, value in self.params.items():
             setattr(self, f"_{name}", value)
 
-        self._stamp = _make_render_stamp(self._render_radius)
-        self._hash_size = 512
-        self._init_kernels()
+        self._init_grid()
         self._init_particles()
 
-    def _init_kernels(self) -> None:
-        """Precompute kernel normalization constants for current smoothing radius."""
-        h = self._smoothing_radius
-        # Spiky pow2: (h - r)^2  — used for density
-        self._k_spiky2 = 6.0 / (math.pi * h**4)
-        # Spiky pow3: (h - r)^3  — used for near-density
-        self._k_spiky3 = 10.0 / (math.pi * h**5)
-        # Derivatives (for pressure gradient)
-        self._k_spiky2_grad = -12.0 / (math.pi * h**4)
-        self._k_spiky3_grad = -30.0 / (math.pi * h**5)
-        # Poly6: (h^2 - r^2)^3  — used for viscosity
-        self._k_poly6 = 4.0 / (math.pi * h**8)
+    # ------------------------------------------------------------------
+    # Setup
+    # ------------------------------------------------------------------
 
-    # ------------------------------------------------------------------
-    # Particle initialization
-    # ------------------------------------------------------------------
+    def _init_grid(self) -> None:
+        self._nx = nx = self.width + 2
+        self._ny = ny = self.height + 2
+
+        solid = np.ones((ny, nx), dtype=bool)
+        solid[1:-1, 1:-1] = False
+        self._solid = solid
+        open_ = (~solid).astype(np.float64)
+        self._open = open_
+
+        # Faces that touch a solid cell carry no flow
+        self._u_wall = solid | np.roll(solid, 1, axis=1)
+        self._v_wall = solid | np.roll(solid, 1, axis=0)
+
+        # Number of non-solid neighbours of each display cell
+        self._open_neighbors = (
+            open_[1:-1, :-2] + open_[1:-1, 2:] + open_[:-2, 1:-1] + open_[2:, 1:-1]
+        )
+
+        self._u = np.zeros((ny, nx))
+        self._v = np.zeros((ny, nx))
 
     def _init_particles(self) -> None:
-        """Arrange particles in a jittered grid in the bottom fill_level fraction."""
-        n = self._particle_count
-        fill_h = self.height * self._fill_level
+        """Hex-pack particles into the bottom fill_level fraction of the tank."""
+        r = self._particle_radius
+        dx = 2.0 * r
+        dy = math.sqrt(3.0) / 2.0 * dx
+        self._rest_density = 1.0 / (dx * dy)  # particles per cell when packed
 
-        aspect = self.width / fill_h if fill_h > 0 else 1.0
-        cols = max(1, int(math.sqrt(n * aspect)))
-        rows = max(1, math.ceil(n / cols))
+        rows = max(1, round(self.height * self._fill_level / dy))
+        cols = int(self.width / dx) + 1
+        j, i = np.mgrid[0:rows, 0:cols]
+        x = 1.0 + r + dx * i + np.where(j % 2 == 1, r, 0.0)
+        y = self._ny - 1.0 - r - dy * j
+        inside = (x <= self._nx - 1.0 - r) & (y >= 1.0 + r)
 
-        spacing_x = self.width / (cols + 1)
-        spacing_y = fill_h / (rows + 1)
+        # A little jitter so no two particles start exactly aligned
+        n = int(inside.sum())
+        self._x = x[inside] + np.random.uniform(-0.01, 0.01, n)
+        self._y = y[inside] + np.random.uniform(-0.01, 0.01, n)
+        self._vx = np.zeros(n)
+        self._vy = np.zeros(n)
+        self._collide()
 
-        positions = []
-        for r in range(rows):
-            for c in range(cols):
-                if len(positions) >= n:
-                    break
-                x = (c + 1) * spacing_x
-                y = self.height - fill_h + (r + 1) * spacing_y
-                positions.append([x, y])
-
-        while len(positions) < n:
-            positions.append(
-                [
-                    np.random.uniform(0.5, self.width - 0.5),
-                    np.random.uniform(self.height - fill_h, self.height - 0.5),
-                ]
-            )
-
-        self._pos = np.array(positions[:n], dtype=np.float64)
-        self._vel = np.zeros_like(self._pos)
-        self._pos += np.random.uniform(-0.2, 0.2, self._pos.shape)
-
-        # Preallocate per-particle density arrays
-        self._density = np.zeros(n, dtype=np.float64)
-        self._near_density = np.zeros(n, dtype=np.float64)
+        self._cell_density = self._density()
+        self._lit = self._cell_density[1:-1, 1:-1] > 0.5 * self._rest_density
 
     # ------------------------------------------------------------------
-    # Spatial hash
+    # Particle <-> grid transfer
     # ------------------------------------------------------------------
 
-    def _build_spatial_hash(self, pos: np.ndarray) -> None:
-        """Build spatial hash for O(1) neighbor lookup."""
-        h = self._smoothing_radius
-        n = len(pos)
+    def _stencil(self, offset_x: float, offset_y: float) -> tuple:
+        """Bilinear weights onto a grid whose samples sit at (i + offset_x,
+        j + offset_y). Returns (flat indices, weights), each of shape (4, n)."""
+        px = self._x - offset_x
+        py = self._y - offset_y
+        i0 = np.floor(px).astype(np.intp)
+        j0 = np.floor(py).astype(np.intp)
+        tx = px - i0
+        ty = py - j0
+        base = j0 * self._nx + i0
+        idx = np.stack([base, base + 1, base + self._nx, base + self._nx + 1])
+        wts = np.stack([(1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty])
+        return idx, wts
 
-        cx = (pos[:, 0] / h).astype(np.int64)
-        cy = (pos[:, 1] / h).astype(np.int64)
-        self._cell_keys = (cx * 15823 + cy * 9737333) % self._hash_size
-        self._sort_order = np.argsort(self._cell_keys)
-        sorted_keys = self._cell_keys[self._sort_order]
+    def _splat(self, idx: np.ndarray, wts: np.ndarray) -> np.ndarray:
+        total = np.bincount(idx.ravel(), wts.ravel(), self._nx * self._ny)
+        return total.reshape(self._ny, self._nx)
 
-        self._bucket_start = np.full(self._hash_size, n, dtype=np.int64)
-        self._bucket_end = np.full(self._hash_size, n, dtype=np.int64)
+    def _density(self) -> np.ndarray:
+        """Particles per cell, sampled at cell centres."""
+        return self._splat(*self._stencil(0.5, 0.5))
 
-        if n > 0:
-            changes = np.where(np.diff(sorted_keys) != 0)[0] + 1
-            starts = np.concatenate([[0], changes])
-            ends = np.concatenate([changes, [n]])
-            bucket_ids = sorted_keys[starts]
-            self._bucket_start[bucket_ids] = starts
-            self._bucket_end[bucket_ids] = ends
+    def _to_grid(self, idx: np.ndarray, wts: np.ndarray, vel: np.ndarray) -> np.ndarray:
+        weight = self._splat(idx, wts)
+        momentum = self._splat(idx, wts * vel)
+        return np.divide(momentum, weight, out=np.zeros_like(weight), where=weight > 0)
 
-        self._cx = cx
-        self._cy = cy
+    def _to_particles(
+        self,
+        idx: np.ndarray,
+        wts: np.ndarray,
+        field: np.ndarray,
+        before: np.ndarray,
+        valid: np.ndarray,
+        vel: np.ndarray,
+    ) -> None:
+        # Faces between two air (or air and solid) cells hold no meaningful
+        # velocity, so leave them out and renormalise
+        wts = wts * valid.ravel()[idx]
+        total = wts.sum(axis=0)
+        usable = total > 0
+        total = np.where(usable, total, 1.0)
 
-        # Precompute 9-cell hash keys for each particle (n, 9)
-        offsets_x = np.array([-1, 0, 1, -1, 0, 1, -1, 0, 1], dtype=np.int64)
-        offsets_y = np.array([-1, -1, -1, 0, 0, 0, 1, 1, 1], dtype=np.int64)
-        cell_keys_9 = (
-            (cx[:, None] + offsets_x) * 15823 + (cy[:, None] + offsets_y) * 9737333
-        ) % self._hash_size
-        self._cell_keys_9 = cell_keys_9
-
-    def _get_neighbor_data(
-        self, idx: int, pos: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
-        """Find neighbors of particle idx within smoothing radius.
-
-        Returns (neighbor_indices, diff_vectors, distances) or None.
-        """
-        h_sq = self._smoothing_radius**2
-        keys = self._cell_keys_9[idx]
-        starts = self._bucket_start[keys]
-        ends = self._bucket_end[keys]
-
-        # Collect candidates from non-empty buckets
-        candidates = []
-        for k in range(9):
-            if starts[k] < ends[k]:
-                candidates.append(self._sort_order[starts[k] : ends[k]])
-
-        if not candidates:
-            return None
-        cand = np.concatenate(candidates)
-
-        diff = pos[cand] - pos[idx]
-        dist_sq = diff[:, 0] ** 2 + diff[:, 1] ** 2
-        mask = (dist_sq < h_sq) & (cand != idx)
-        if not np.any(mask):
-            return None
-
-        neighbors = cand[mask]
-        d = diff[mask]
-        r = np.sqrt(dist_sq[mask])
-        return neighbors, d, r
+        new = field.ravel()[idx]
+        pic = (wts * new).sum(axis=0) / total
+        flip = vel + (wts * (new - before.ravel()[idx])).sum(axis=0) / total
+        blended = (1.0 - self._flip_ratio) * pic + self._flip_ratio * flip
+        vel[usable] = blended[usable]
 
     # ------------------------------------------------------------------
     # Physics substep
     # ------------------------------------------------------------------
 
-    def _substep(self, dt_sub: float) -> None:
-        """SPH substep: gravity → predict → hash → density+pressure+viscosity → integrate → boundaries."""
-        vel = self._vel
+    def _push_apart(self) -> None:
+        """Separate overlapping particles so the liquid keeps its volume."""
+        min_dist = 2.0 * self._particle_radius
+        n = len(self._x)
 
-        # Oscillating gravity for sloshing
-        t = self.current_time
-        freq = self._slosh_frequency
-        amp = self._slosh_amplitude
-        angle = amp * (
-            math.sin(_TWO_PI * freq * t)
-            + 0.3 * math.sin(_TWO_PI * freq * math.sqrt(2) * t)
-        )
-        vel[:, 0] += self._gravity * math.sin(angle) * dt_sub
-        vel[:, 1] += self._gravity * math.cos(angle) * dt_sub
+        # An unbalanced tree builds in half the time and queries no slower
+        # at a few hundred particles
+        pos = np.column_stack([self._x, self._y])
+        tree = cKDTree(pos, balanced_tree=False, compact_nodes=False)
+        pairs = tree.query_pairs(min_dist + _NEIGHBOR_SLACK, output_type="ndarray")
+        if len(pairs) == 0:
+            return
+        a, b = pairs[:, 0], pairs[:, 1]
 
-        # Predict positions — fixed lookahead (matching Seb Lague) stabilizes
-        # the spatial hash by keeping neighbor lookups consistent across timesteps
-        predicted = self._pos + vel * (1.0 / 120.0)
+        for _ in range(2):
+            dx = self._x[b] - self._x[a]
+            dy = self._y[b] - self._y[a]
+            dist = np.maximum(np.hypot(dx, dy), 1e-9)
+            scale = np.maximum(0.5 * (min_dist - dist) / dist, 0.0)
+            move_x = dx * scale
+            move_y = dy * scale
+            self._x += np.bincount(b, move_x, n) - np.bincount(a, move_x, n)
+            self._y += np.bincount(b, move_y, n) - np.bincount(a, move_y, n)
 
-        # Build spatial hash and cache all neighbor data once
-        self._build_spatial_hash(predicted)
-        neighbor_cache = self._cache_neighbors(predicted)
+    def _collide(self) -> None:
+        """Keep particles inside the tank; walls stop them and rub."""
+        r = self._particle_radius
+        keep = 1.0 - self._wall_friction
+        low = 1.0 + r
 
-        # Pass 1: compute all densities (including wall mirror corrections)
-        self._compute_densities(neighbor_cache, predicted)
-        # Pass 2: pressure forces + viscosity (combined, reusing cached neighbors)
-        self._apply_forces(neighbor_cache, dt_sub, predicted)
+        high = self._nx - 1.0 - r
+        hit = (self._x < low) | (self._x > high)
+        self._vx[hit] = 0.0
+        self._vy[hit] *= keep
+        np.clip(self._x, low, high, out=self._x)
 
-        # Integrate and enforce boundaries
-        self._pos += vel * dt_sub
-        self._enforce_boundaries()
+        high = self._ny - 1.0 - r
+        hit = (self._y < low) | (self._y > high)
+        self._vy[hit] = 0.0
+        self._vx[hit] *= keep
+        np.clip(self._y, low, high, out=self._y)
 
-    def _cache_neighbors(
-        self, pos: np.ndarray
-    ) -> list[tuple[np.ndarray, np.ndarray, np.ndarray] | None]:
-        """Find and cache neighbors for all particles in one pass."""
-        n = self._particle_count
-        cache: list[tuple[np.ndarray, np.ndarray, np.ndarray] | None] = []
+    def _project(self, fluid: np.ndarray, density: np.ndarray) -> None:
+        """Make the grid velocities incompressible in fluid cells.
 
-        for i in range(n):
-            cache.append(self._get_neighbor_data(i, pos))
-        return cache
+        Solves the pressure equation exactly: the system is symmetric and
+        banded (each cell couples to its four neighbours), with one unknown
+        per display cell and an identity row for cells that hold no fluid.
+        """
+        u, v = self._u, self._v
+        w, h = self.width, self.height
+        inner = fluid[1:-1, 1:-1]
 
-    def _compute_densities(
-        self,
-        cache: list[tuple[np.ndarray, np.ndarray, np.ndarray] | None],
-        predicted: np.ndarray,
-    ) -> None:
-        """Compute density and near-density for all particles using Spiky kernels."""
-        h = self._smoothing_radius
-        k2 = self._k_spiky2
-        k3 = self._k_spiky3
+        divergence = u[1:-1, 2:] - u[1:-1, 1:-1] + v[2:, 1:-1] - v[1:-1, 1:-1]
+        # Drift compensation: ask for outflow where particles are packed
+        # tighter than they should be
+        divergence -= np.maximum(density[1:-1, 1:-1] - self._rest_density, 0.0)
 
-        # Self-contribution: kernel evaluated at r=0 (particle's own density)
-        self_density = k2 * h * h
-        self_near_density = k3 * h * h * h
+        bands = np.zeros((w + 1, w * h))
+        bands[0] = np.where(inner, self._open_neighbors + _REGULARIZATION, 1.0).ravel()
+        right = np.zeros((h, w))
+        right[:, :-1] = -1.0 * (inner[:, :-1] & inner[:, 1:])
+        bands[1] = right.ravel()
+        below = np.zeros((h, w))
+        below[:-1, :] = -1.0 * (inner[:-1, :] & inner[1:, :])
+        bands[w] = below.ravel()
+        rhs = np.where(inner, -divergence, 0.0).ravel()
 
-        # Precompute wall distances for mirror particle density correction.
-        # Each particle near a wall gets density from its virtual reflection,
-        # which provides the "wall pressure" missing from the truncated kernel.
-        wall_dists = np.column_stack(
-            [
-                predicted[:, 0],  # left wall
-                self.width - predicted[:, 0],  # right wall
-                predicted[:, 1],  # top wall
-                self.height - predicted[:, 1],  # bottom wall
-            ]
-        )
-        half_h = h * 0.5
-        # Mirror is at 2*d; only contributes if 2*d < h, i.e. d < h/2
-        wall_mask = wall_dists < half_h
-        mirror_dists = 2.0 * wall_dists
-        mirror_diff = h - mirror_dists  # (h - 2d), positive where mask is True
+        pressure = np.zeros_like(u)
+        solved = solveh_banded(bands, rhs, lower=True, check_finite=False)
+        pressure[1:-1, 1:-1] = solved.reshape(h, w)
 
-        for i, entry in enumerate(cache):
-            if entry is None:
-                self._density[i] = self_density
-                self._near_density[i] = self_near_density
-            else:
-                _neighbors, _d, r = entry
-                diff = h - r
-                self._density[i] = self_density + k2 * np.sum(diff * diff)
-                self._near_density[i] = self_near_density + k3 * np.sum(
-                    diff * diff * diff
-                )
+        open_ = self._open
+        u[:, 1:] += (pressure[:, :-1] - pressure[:, 1:]) * open_[:, :-1] * open_[:, 1:]
+        v[1:, :] += (pressure[:-1, :] - pressure[1:, :]) * open_[:-1, :] * open_[1:, :]
 
-            # Add mirror particle contributions for nearby walls
-            for w in range(4):
-                if wall_mask[i, w]:
-                    md = mirror_diff[i, w]
-                    self._density[i] += k2 * md * md
-                    self._near_density[i] += k3 * md * md * md
+    def _substep(self, dt: float, gx: float, gy: float) -> None:
+        self._vx += gx * dt
+        self._vy += gy * dt
+        self._x += self._vx * dt
+        self._y += self._vy * dt
+        self._collide()
+        self._push_apart()
+        self._collide()
 
-    def _apply_forces(
-        self,
-        cache: list[tuple[np.ndarray, np.ndarray, np.ndarray] | None],
-        dt_sub: float,
-        predicted: np.ndarray,
-    ) -> None:
-        """Apply pressure forces and viscosity using cached neighbor data."""
-        vel = self._vel
-        h = self._smoothing_radius
-        h_sq = h * h
-        half_h = h * 0.5
-        target = self._target_density
-        p_mult = self._pressure_multiplier
-        np_mult = self._near_pressure_multiplier
-        k2g = self._k_spiky2_grad
-        k3g = self._k_spiky3_grad
-        k_poly6 = self._k_poly6
-        visc = self._viscosity_strength
+        # A cell is fluid if it holds at least one particle
+        fluid = np.zeros(self._nx * self._ny, dtype=bool)
+        cell = np.floor(self._y).astype(np.intp) * self._nx
+        cell += np.floor(self._x).astype(np.intp)
+        fluid[cell] = True
+        fluid = fluid.reshape(self._ny, self._nx)
 
-        # Wall normal directions: force pushes AWAY from each wall
-        #   left (x=0): +x, right (x=W): -x, top (y=0): +y, bottom (y=H): -y
-        wall_normals = [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)]
+        u_idx, u_wts = self._stencil(0.0, 0.5)
+        v_idx, v_wts = self._stencil(0.5, 0.0)
+        self._u = self._to_grid(u_idx, u_wts, self._vx)
+        self._v = self._to_grid(v_idx, v_wts, self._vy)
+        self._u[self._u_wall] = 0.0
+        self._v[self._v_wall] = 0.0
+        u_before = self._u.copy()
+        v_before = self._v.copy()
 
-        for i, entry in enumerate(cache):
-            density_i = max(self._density[i], 0.01)
-            pressure_i = (self._density[i] - target) * p_mult
-            near_pressure_i = self._near_density[i] * np_mult
+        # Particles don't move again this substep, so step() reuses this
+        self._cell_density = self._density()
+        self._project(fluid, self._cell_density)
 
-            if entry is not None:
-                neighbors, d, r = entry
-
-                # --- Pressure from neighbors ---
-                pressure_j = (self._density[neighbors] - target) * p_mult
-                near_pressure_j = self._near_density[neighbors] * np_mult
-
-                shared_pressure = (pressure_i + pressure_j) * 0.5
-                shared_near = (near_pressure_i + near_pressure_j) * 0.5
-
-                diff = h - r
-                r_safe = np.maximum(r, 1e-8)
-                dir_x = d[:, 0] / r_safe
-                dir_y = d[:, 1] / r_safe
-
-                grad2 = k2g * diff
-                grad3 = k3g * diff * diff
-
-                density_j = np.maximum(self._density[neighbors], 0.01)
-                force_mag = (shared_pressure * grad2 + shared_near * grad3) / density_j
-
-                vel[i, 0] += np.sum(force_mag * dir_x) * dt_sub / density_i
-                vel[i, 1] += np.sum(force_mag * dir_y) * dt_sub / density_i
-
-                # --- Viscosity ---
-                diff_sq = h_sq - r * r
-                w = k_poly6 * diff_sq * diff_sq * diff_sq
-                vel[i, 0] += np.sum(w * (vel[neighbors, 0] - vel[i, 0])) * visc * dt_sub
-                vel[i, 1] += np.sum(w * (vel[neighbors, 1] - vel[i, 1])) * visc * dt_sub
-
-            # --- Wall mirror pressure ---
-            # Mirror particle has same density/pressure as self; force pushes
-            # away from wall (the reaction force the wall would exert).
-            px, py = predicted[i]
-            wall_dists = [px, self.width - px, py, self.height - py]
-            for w_idx in range(4):
-                wd = wall_dists[w_idx]
-                if wd >= half_h:
-                    continue
-                mirror_r = 2.0 * wd
-                md = h - mirror_r
-                g2 = k2g * md
-                g3 = k3g * md * md
-                # Mirror has same pressure → shared = self pressure
-                fm = (pressure_i * g2 + near_pressure_i * g3) / density_i
-                nx, ny = wall_normals[w_idx]
-                vel[i, 0] += fm * nx * dt_sub / density_i
-                vel[i, 1] += fm * ny * dt_sub / density_i
-
-    def _enforce_boundaries(self) -> None:
-        """Clamp particles to tank walls with damped velocity reflection."""
-        pos = self._pos
-        vel = self._vel
-        damp = self._collision_damping
-        margin = 0.1
-
-        mask = pos[:, 0] < margin
-        pos[mask, 0] = margin
-        vel[mask, 0] = abs(vel[mask, 0]) * damp
-
-        mask = pos[:, 0] > self.width - margin
-        pos[mask, 0] = self.width - margin
-        vel[mask, 0] = -abs(vel[mask, 0]) * damp
-
-        mask = pos[:, 1] < margin
-        pos[mask, 1] = margin
-        vel[mask, 1] = abs(vel[mask, 1]) * damp
-
-        mask = pos[:, 1] > self.height - margin
-        pos[mask, 1] = self.height - margin
-        vel[mask, 1] = -abs(vel[mask, 1]) * damp
+        # Only faces of a fluid cell are usable. (The reference code also
+        # accepts faces of solid cells, which keeps the liquid from settling.)
+        u_valid = fluid | np.roll(fluid, 1, axis=1)
+        v_valid = fluid | np.roll(fluid, 1, axis=0)
+        self._to_particles(u_idx, u_wts, self._u, u_before, u_valid, self._vx)
+        self._to_particles(v_idx, v_wts, self._v, v_before, v_valid, self._vy)
 
     # ------------------------------------------------------------------
     # Animation interface
@@ -405,43 +307,30 @@ class FluidSimulation(Animation):
 
     @override
     def step(self, dt: float) -> None:
-        # time_scale < 1 plays the simulation in slow motion
-        dt *= self._time_scale
         self.current_time += dt
 
-        # `substeps` is per 1/60 s of simulated time, so the substep size (and
+        # Oscillating gravity direction for sloshing
+        t = self.current_time
+        freq = self._slosh_frequency
+        angle = self._slosh_amplitude * (
+            math.sin(_TWO_PI * freq * t)
+            + 0.3 * math.sin(_TWO_PI * freq * math.sqrt(2) * t)
+        )
+        gx = self._gravity * math.sin(angle)
+        gy = self._gravity * math.cos(angle)
+
+        # `substeps` is per 1/20 s of simulated time, so the substep size (and
         # with it the stability of the solver) doesn't depend on the frame rate
-        substeps = max(1, round(self._substeps * dt * 60.0))
-        dt_sub = dt / substeps
+        substeps = max(1, round(self._substeps * dt / _SUBSTEP_REFERENCE))
         for _ in range(substeps):
-            self._substep(dt_sub)
+            self._substep(dt / substeps, gx, gy)
+
+        relative = self._cell_density[1:-1, 1:-1] / self._rest_density
+        self._lit = np.where(self._lit, relative > _LIT_OFF, relative > _LIT_ON)
 
     @override
     def render_gray(self) -> np.ndarray:
-        canvas = np.zeros((self.height, self.width), dtype=np.float32)
-        stamp = self._stamp
-        r = self._render_radius
-        sh, sw = stamp.shape
-
-        # Vectorized scatter: for each offset in the stamp, accumulate
-        # contributions from all particles at once using np.add.at
-        px_all = np.rint(self._pos[:, 0]).astype(np.intp)
-        py_all = np.rint(self._pos[:, 1]).astype(np.intp)
-
-        for sy in range(sh):
-            for sx in range(sw):
-                weight = stamp[sy, sx]
-                if weight == 0:
-                    continue
-                cy = py_all + sy - r
-                cx = px_all + sx - r
-                valid = (cy >= 0) & (cy < self.height) & (cx >= 0) & (cx < self.width)
-                np.add.at(canvas, (cy[valid], cx[valid]), weight)
-
-        if self._density_threshold > 0:
-            canvas /= self._density_threshold
-        np.clip(canvas, 0.0, 1.0, out=canvas)
-        return canvas
+        return self._lit.astype(np.float32)
 
     @override
     def on_configure(self, **params: Any) -> None:
@@ -449,18 +338,12 @@ class FluidSimulation(Animation):
             setattr(self, f"_{name}", value)
 
         # Changing how much fluid there is restarts the simulation
-        rebuild = "particle_count" in params or "fill_level" in params
-
-        if "render_radius" in params:
-            self._stamp = _make_render_stamp(self._render_radius)
-
-        if "smoothing_radius" in params:
-            self._init_kernels()
-
-        if rebuild:
+        if "fill_level" in params or "particle_radius" in params:
             self._init_particles()
 
     @override
     def reset(self, seed: int | None = None) -> None:
         super().reset(seed)
+        self._u[:] = 0.0
+        self._v[:] = 0.0
         self._init_particles()
