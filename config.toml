@@ -9,7 +9,7 @@ buffer_duration = 1.0  # Frame buffer duration in seconds
 
 [serial]
 port = "/dev/ttyUSB0"
-baudrate = 9600
+baudrate = 38400  # must match the DS#2 switches on every controller (docs/hardware.md §3)
 timeout = 1.0
 mock = true  # Set to false for real hardware
 

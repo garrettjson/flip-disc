@@ -6,7 +6,7 @@ Read `docs/hardware.md` first — it is the reference for the AlfaZeta panels (p
 
 - `spec.py` — protocol constants and the (data size, refresh mode) → command byte table. No I/O.
 - `formats.py` — bit packing and single-message encoding.
-- `protocol.py` — `ProtocolEncoder`: binds to a `DisplayConfig`, encodes a whole frame (one message per panel + flush).
+- `protocol.py` — `ProtocolEncoder`: binds to a `DisplayConfig`, encodes a set of panels by address (`encode_panels`) or a whole frame (`encode_batch`), one message per panel + flush. The presenter sends only changed panels.
 - `panel_map.py` — splits the canvas into per-panel arrays.
 - `serial.py` — `SerialTransport` ABC, hardware (aioserial) and mock implementations.
 - `PROTOCOL.md` — transcription of the manufacturer's protocol sheet.

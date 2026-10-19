@@ -82,6 +82,9 @@ class DisplayPipeline:
 
         # Last frame storage + preview queue
         self._last_frame: np.ndarray | None = None
+        # What each panel was last sent, in row-major order; None means the
+        # panels' state is unknown and the next frame must send all of them
+        self._sent_panels: list[np.ndarray] | None = None
         self._preview_queue: asyncio.Queue[np.ndarray] | None = None
         self._preview_task: asyncio.Task | None = None
 
@@ -235,19 +238,7 @@ class DisplayPipeline:
                         await asyncio.sleep(sleep_time)
                     continue
 
-                # Skip serial write if the frame is identical to the last
-                # one sent — avoids pulsing the mechanical display needlessly.
-                changed = self._last_frame is None or not np.array_equal(
-                    frame, self._last_frame
-                )
-
-                if changed:
-                    panel_bits_list = split_canvas_bits_to_panels(frame, self.cfg)
-                    addr_base = self.cfg.address_base
-                    batch = self.encoder.encode_batch(panel_bits_list, addr_base)
-                    await self.serial.write_frames([batch])
-                    self._last_frame = frame.copy()
-                    self._presented += 1
+                await self._write_frame(frame)
 
                 if self._preview_queue is not None:
                     with contextlib.suppress(asyncio.QueueFull):
@@ -262,6 +253,27 @@ class DisplayPipeline:
         except Exception as e:
             raise HardwareError(f"Presenter failed: {e}") from e
 
+    async def _write_frame(self, frame: np.ndarray) -> None:
+        """Send only the panels whose bits differ from what they last got.
+
+        Unchanged panels aren't re-sent (no wire time, no needless disc
+        pulses); a frame identical to the last one writes nothing at all.
+        """
+        panels = split_canvas_bits_to_panels(frame, self.cfg)
+        sent = self._sent_panels
+        changed = {
+            self.cfg.address_base + i: bits
+            for i, bits in enumerate(panels)
+            if sent is None or not np.array_equal(bits, sent[i])
+        }
+        if not changed:
+            return
+
+        await self.serial.write_frames([self.encoder.encode_panels(changed)])
+        self._sent_panels = [bits.copy() for bits in panels]
+        self._last_frame = frame.copy()
+        self._presented += 1
+
     # --- Public API -------------------------------------------------------
 
     async def start(
@@ -270,6 +282,7 @@ class DisplayPipeline:
         params = validate_params(animation, params or {})
         self._requested_animation = animation
         await self.serial.connect()
+        self._sent_panels = None
         self._running = True
 
         # Start generator thread with the initial animation as its first request
@@ -346,6 +359,8 @@ class DisplayPipeline:
         with contextlib.suppress(SerialConnectionError, OSError):
             await self.serial.disconnect()
         await self.serial.connect()
+        # The panels may have been power-cycled; send all of them next frame
+        self._sent_panels = None
 
     async def set_animation(
         self, name: str, params: dict[str, Any] | None = None

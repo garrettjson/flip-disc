@@ -37,11 +37,11 @@ The display is **28×28**: two AlfaZeta 14x28 XY5 panels stacked vertically, whi
 From the manufacturer's manual and protocol sheet; the full reference is `docs/hardware.md`. Read it before touching `flipdisc/hardware/` or reasoning about frame rates.
 
 - **Refresh rate depends on how many dots change.** AlfaZeta guarantees 10 fps when every dot flips each frame and quotes about 25 fps for typical video, where only a fraction change.
-- **Baud is set by a DIP switch on each controller**: 9600, 19200, 38400, or 57600 (maximum). `config.toml` must match it and currently says 9600.
-- **The serial link is a hard budget.** A full frame is 131 bytes (4 × 32-byte strip messages + 3-byte flush): ~136 ms at 9600 baud (~7 fps), ~23 ms at 57600.
+- **Baud is set by a DIP switch on each controller**: 9600, 19200, 38400, or 57600 (maximum). `[serial] baudrate` in `config.toml` is the one place the software sets it, and it must match the switches (positions per rate: `docs/hardware.md` §3). The switches on this display have not been checked.
+- **The serial link is a hard budget.** A full frame is 131 bytes (4 × 32-byte strip messages + 3-byte flush): ~136 ms at 9600 baud (~7 fps), ~34 ms at 38400 (~29 fps), ~23 ms at 57600.
 - **Power:** 24 V; up to 680 mA per 14x28 panel while flipping; 1 A per panel recommended.
 - **The protocol is write-only** — no acknowledgement, checksum, or readback, so software can't detect a dot that failed to flip.
-- **Verification status is unrecorded.** The repo defaults to the mock transport and holds no record of a run against the physical display, so treat hardware behavior as unconfirmed unless `docs/hardware.md` says otherwise.
+- **Verification status is unrecorded.** The repo defaults to the mock transport and holds no record of a run against the physical display, so treat hardware behavior as unconfirmed unless `docs/hardware.md` says otherwise. Its §9 lists the open questions and a checklist for the first run on the real display.
 
 ## Design Intent
 
@@ -53,7 +53,7 @@ Goals stated by the owner; some are not yet true of the code. Ask before proposi
 Decisions the owner has made about the refactor (October 2026):
 
 - **Python for everything, for the time being.** A rewrite in another language was considered and set aside.
-- **Performance work comes last.** No Numba or other compiled kernels until the structural work is done, even though `fluid` (~100–190 ms per frame) and `simplex_noise` (~27 ms) are too slow today; every other animation costs under 3 ms.
+- **Performance work comes last.** No Numba or other compiled kernels until the structural work is done, even though `simplex_noise` (~27 ms per frame) is too slow today. `fluid` costs about 3 ms on the dev machine (unmeasured on a Pi); every other animation costs under 3 ms.
 - **Animations declare their parameters** (type, default, range) so the API validates them and the web UI builds its controls from the schema. Built: see `flipdisc/animations/params.py`.
 - **Keep a frame buffer of about one second**, not a single-frame handoff. (`buffer_duration = 1.0`.)
 - Don't make other structural changes to `engine/`, `animations/base.py`, or the API boundary without checking what has been agreed.
@@ -93,7 +93,7 @@ Before calling a change done: run the tests, run `ruff check` and `ruff format -
 ### Pipeline
 
 - **Generator thread** steps the animation, applies its `processing_steps`, and pushes frames into `queue.Queue(maxsize=refresh_rate * buffer_duration)`. It blocks on `put(timeout=0.05)` when full — natural backpressure.
-- **Presenter** (async task) pulls one frame per tick at `refresh_rate`, splits it into panels, encodes, writes to serial, and feeds the preview queue. Frames identical to the last one written are **not** re-sent (no needless disc pulses), and `frames_presented` only counts frames actually written.
+- **Presenter** (async task) pulls one frame per tick at `refresh_rate`, splits it into panels, encodes, writes to serial, and feeds the preview queue. Only the panels whose bits changed since they were last sent are written, followed by the flush (no needless wire time or disc pulses); a frame identical to the last one writes nothing, and `frames_presented` only counts frames actually written. After `start` or `reconnect_serial` the next frame sends every panel.
 - **Cross-thread requests** go through one ordered queue (`_requests`) that the generator empties at the top of each iteration: `switch` (drains the frame queue once the new animation is built), `configure`, and `reset`. So `set_animation` / `configure_animation` / `reset` return before the change is applied; errors raised while applying them are recorded in `get_status().last_error` instead of reaching the caller.
 
 ### DisplayPipeline public API
@@ -173,7 +173,7 @@ Verified behaviors that are easy to trip over. Delete an entry when you fix it.
 - **Bad requests get a 400; failures after handoff show up in `/status`.** An unknown animation name, an unknown parameter, or a value of the wrong type or out of range is rejected before anything reaches the generator. What can still fail afterwards — a clip name that isn't in `clips.toml`, an image path that doesn't exist, a bad `layer.<id>.<key>` value, an animation bug — is logged and recorded in `pipeline.last_error` on `GET /status`, after the request has already returned 200. A failed switch or configure leaves the current animation running; an animation that raises while running is dropped (`animation` becomes `null`) and the display holds its last frame until the next successful switch.
 - **Live `configure` lags by up to `buffer_duration` (1 s).** The generator computes ahead to fill the frame buffer, so a parameter change only shows once the frames already queued have played out. Switching animations is immediate (it drains the buffer).
 - **Whole-step speeds are snapped to the frame rate.** `Cadence` rounds a requested rate to a whole number of frames per step, so at 20 fps the achievable pixel speeds are 20, 10, 6.67, 5, 4, … px/s (or 40, 60, … above one pixel per frame). A requested 13 px/s plays at 10. This is deliberate; see `flipdisc/animations/CLAUDE.md`, "Motion".
-- **A slow animation plays in slow motion.** Each produced frame advances the animation by exactly one display interval, so if frames take longer than that to compute (`fluid` does today), the display falls behind real time instead of skipping.
+- **A slow animation plays in slow motion.** Each produced frame advances the animation by exactly one display interval, so if frames take longer than that to compute, the display falls behind real time instead of skipping.
 - **Clips are GIFs** listed in `assets/clips/clips.toml` (create with `flipdisc/clips/importer.py`). Some docstrings still say `.npz`. No clips are checked in.
 - **`[weather]` in `config.toml` is not parsed.** The fetch loop only starts via `POST /weather/config` (the web UI does this when you start `weather`).
 - **`GET /images`** globs `assets/images/*.png`; the only images are `assets/images/weather/*.bmp`, so it returns `[]`.

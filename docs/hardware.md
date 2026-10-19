@@ -7,7 +7,7 @@ Everything relevant from the two documents AlfaZeta supplied to the owner, plus 
 | *14x28 XY5 / 7x28 XY5 Flipdot Panels — User Manual*, Rev. 9.0, 13 Mar 2017 (12 pages) | **Manual** |
 | *Flipdots display control protocols — August 2018* (1 page) | **Protocol** |
 
-Sections marked **Project note** are this project's reading of the documents, not manufacturer statements. Manufacturer support: info@alfazeta.pl (the Manual says "ask for details" in several places — drawings, Ethernet converters, the protocol).
+Sections marked **Project note** are this project's reading of the documents, not manufacturer statements. §9 lists the open questions and a checklist for the first run on the real display. Manufacturer support: info@alfazeta.pl (the Manual says "ask for details" in several places — drawings, Ethernet converters, the protocol).
 
 ---
 
@@ -96,6 +96,13 @@ The board also has a reset button. The Manual says of every other header on the 
 
 57600 is the maximum. Every controller on a line must use the same rate, and `[serial] baudrate` in `config.toml` must match.
 
+**Project note — what baud means here.** Baud is the speed of the serial data link: how many bits per second travel down the RS-485 wire from the computer to the controllers. Each byte costs 10 bits on the wire, so 9600 baud carries about 960 bytes per second and 57600 about 5,760. It sets how quickly a frame *arrives*, not how the dots are driven: the strength and length of the pulse that flips a dot is the magnetizing time (DS#1 position 6, §5). Two consequences:
+
+- **At 9600 the wire, not the dots, is the bottleneck.** A full frame takes about 136 ms to send, so the display can't exceed about 7 fps however fast the dots could flip (§7).
+- **A faster link can mean more flips per second**, and therefore more average current, because frames arrive sooner. The 1 A per panel supply guidance in §4 already assumes the panels are driven as fast as they can go.
+
+If the computer's rate doesn't match the switches, the controllers won't read the data correctly. `[serial] baudrate` in `config.toml` is the only place the software sets the rate; to change it, set the DS#2 switches on every controller to the matching row of the table above, then edit `config.toml`. Whether this display's switches match `config.toml` has not been checked.
+
 ### DS#1 — address, magnetizing time, test mode (8 positions)
 
 The Manual numbers the positions 0–7; the physical switch is printed 1–8.
@@ -179,9 +186,12 @@ The protocol is write-only as documented: there is no acknowledgement, checksum,
 
 ## 7. How this project drives the hardware
 
-- **One frame = one buffered message per panel + one flush.** `ProtocolEncoder.encode_batch` (`flipdisc/hardware/protocol.py`) sends `0x93` (14x7) or `0x84` (28x7) to each address in row-major order, then `0x80 0x82 0x8F`, so all panels flip together. 7x7 panels can't buffer, so they get `0x87` and no flush.
+- **One frame = one buffered message per changed panel + one flush.** `ProtocolEncoder.encode_panels` (`flipdisc/hardware/protocol.py`) sends `0x93` (14x7) or `0x84` (28x7) to each address, then `0x80 0x82 0x8F`, so all panels flip together. 7x7 panels can't buffer, so they get `0x87` and no flush.
 - **Bit packing** is in `flipdisc/hardware/formats.py` (`np.packbits(..., bitorder="little")` down each column), covered by `flipdisc/tests/test_formats.py`.
 - **Addresses** are `address_base + panel_index`.
+- **Only changed panels are sent.** The presenter compares each panel with what it was last sent and writes just the ones that differ, then the flush. The first frame after connecting or reconnecting sends every panel.
+
+**Project note — unverified on the hardware.** Sending a subset relies on two things the Protocol implies but doesn't state: a controller that receives no new data keeps its stored image across a flush (the flush "refreshes all connected displays", including ones that weren't sent anything), and re-showing that unchanged image doesn't disturb it. If strips that didn't change go blank or glitch when another strip updates, this is the cause; restoring full-frame sends is a one-line change in `DisplayPipeline._write_frame`.
 
 ### Wire time per full frame
 
@@ -191,15 +201,15 @@ A message is 4 framing bytes plus the data; a serial byte is 10 bits on the wire
 |---|---|---|---|---|---|
 | 8 × 14x7 (for comparison) | 8 × 18 + 3 = 147 | 153 ms | 77 ms | 38 ms | 26 ms |
 | 4 × 28x7 (this display, current config) | 4 × 32 + 3 = 131 | 136 ms | 68 ms | 34 ms | 23 ms |
+| One changed 28x7 strip + flush | 32 + 3 = 35 | 36 ms | 18 ms | 9 ms | 6 ms |
 
-`config.toml` currently sets 9600 baud, which caps a full-frame stream at about 7 fps — below even the Manual's 10 fps worst case. At 57600 the wire allows about 44 fps, so the dots, not the link, become the limit.
+At 9600 a full-frame stream is capped at about 7 fps, below even the Manual's 10 fps worst case. From 38400 up (about 29 fps at 38400, 44 fps at 57600) the link is faster than the default 20 fps refresh rate, so the dots, not the link, become the limit. The rate in use is whatever `[serial] baudrate` in `config.toml` says (§3).
 
 ### Known gaps between the code and the hardware
 
 - `refresh_rate` defaults to 20 fps; the Manual's guarantee for all-dots-changing content is 10 fps.
-- Every panel is re-sent whenever any pixel in the frame changes (frames identical to the previous one are skipped entirely).
 - Nothing in the code limits how many dots change per frame, staggers flips for power, or runs a maintenance routine.
-- The repo holds no record of a run against the physical display (the config defaults to the mock transport), so none of the above is confirmed on real panels.
+- The repo holds no record of a run against the physical display (the config defaults to the mock transport), so none of the above is confirmed on real panels. §9 lists what to check first.
 
 ---
 
@@ -245,3 +255,27 @@ Relevant to software mainly through the flip-flop routine below, but recorded in
 3. **Dot sticking to the stator pins** (dust plus humidity forms an adhesive film): clean the contact points with a swab and 70 % spirit; if that fails, replace the dot.
 
 **Project note.** The flip-flop routine is something this software could provide (an all-white/all-black exercise animation, run at startup or on a schedule). It doesn't exist yet.
+
+---
+
+## 9. Open questions, and what to check first
+
+**Project note.** Things the documents leave open or that this project assumes, none tested on this display yet:
+
+- **Does the buffered store + flush work as described?** The project sends `0x84` (store) to each changed panel, then the `0x82` flush (§6, §7). If buffered sends misbehave, the fallback is `0x83` (show on receipt) per changed panel with no flush: strips then update one after another (about 9 ms apart at 38400) instead of together, but changed-panel sends no longer depend on the flush at all.
+- **Is bit 0 really the top dot?** The Protocol says so and `formats.py` follows it. If each strip shows its image upside down, the bit order (or the panels' mounting) is the other way round, and `formats.py` and `test_formats.py` need flipping.
+- **Is 57600 baud reliable on this bus?** It's the maximum the Manual lists; the project uses 38400 for now (§3).
+- **Does resending an identical panel pulse any dots?** (§5)
+
+### Checklist for the first run on the real display
+
+1. **Baud:** DS#2 on all four controllers matches `[serial] baudrate` in `config.toml` (§3).
+2. **Addresses:** read DS#1 on each controller and confirm the top strip is `address_base`, then `+1`, `+2`, `+3` going down (§1, §3). If they differ, change the switches or the mapping code.
+3. **Orientation:** show an asymmetric test image (an arrow, or text). If strips are upside down, see the bit-order question above; if they are in the wrong order, see addresses.
+4. **Flush:** show a static image, then change only one strip. The other strips must stay exactly as they were (§7). If they blank or glitch, switch to full-frame or `0x83` sends.
+5. **Identical resends:** send the same frame twice in a row and listen; a second click would mean the controller pulses dots that don't need to change. The server never resends an identical frame, so this needs a one-off script.
+6. **Power:** about 2 A at 24 V for the two panels (§4); watch for brown-outs during full-screen flips.
+
+If the bus is driven from the Pi's built-in serial port instead of a USB-to-RS485 adapter, disable Linux's serial console on that port first, or it will write to the bus.
+
+Record what you find in this document and remove the matching open questions.

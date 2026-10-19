@@ -47,7 +47,7 @@ class WireframeCube(SupersampledAnimation):
 - **`nullable=True` with `default=None`** means "not set / decide automatically". Check `params.get("x") is not None` before using it.
 - **`unit`, `label`, `step`** only affect the web UI.
 - **Ranges are enforced**, so set them to what the animation can actually handle, not to what looks tidy in a form. A test (`test_params.py`) checks that every animation's defaults satisfy its own declarations.
-- **A parameter whose change resets state** (life `density`, fluid `particle_count`, pendulum `initial_angle`) should say so in a comment: the UI sends a single changed key, but API clients may send several.
+- **A parameter whose change resets state** (life `density`, fluid `fill_level`, pendulum `initial_angle`) should say so in a comment: the UI sends a single changed key, but API clients may send several.
 - What can still go wrong after validation — a file that doesn't exist, text too wide to fit — should not raise from `on_configure` if a fallback exists; record it (see `TextAnimation._error`). An exception there surfaces only as `last_error` in `GET /status`.
 
 ## Motion
