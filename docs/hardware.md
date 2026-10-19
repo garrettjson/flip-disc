@@ -7,7 +7,7 @@ Everything relevant from the two documents AlfaZeta supplied to the owner, plus 
 | *14x28 XY5 / 7x28 XY5 Flipdot Panels — User Manual*, Rev. 9.0, 13 Mar 2017 (12 pages) | **Manual** |
 | *Flipdots display control protocols — August 2018* (1 page) | **Protocol** |
 
-Sections marked **Project note** are this project's reading of the documents, not manufacturer statements. Manufacturer support: info@alfazeta.pl (the Manual says "ask for details" in several places — drawings, Ethernet converters, the protocol).
+Sections marked **Project note** are this project's reading of the documents, not manufacturer statements. §9 lists the open questions and a checklist for the first run on the real display. Manufacturer support: info@alfazeta.pl (the Manual says "ask for details" in several places — drawings, Ethernet converters, the protocol).
 
 ---
 
@@ -209,7 +209,7 @@ At 9600 a full-frame stream is capped at about 7 fps, below even the Manual's 10
 
 - `refresh_rate` defaults to 20 fps; the Manual's guarantee for all-dots-changing content is 10 fps.
 - Nothing in the code limits how many dots change per frame, staggers flips for power, or runs a maintenance routine.
-- The repo holds no record of a run against the physical display (the config defaults to the mock transport), so none of the above is confirmed on real panels.
+- The repo holds no record of a run against the physical display (the config defaults to the mock transport), so none of the above is confirmed on real panels. §9 lists what to check first.
 
 ---
 
@@ -255,3 +255,27 @@ Relevant to software mainly through the flip-flop routine below, but recorded in
 3. **Dot sticking to the stator pins** (dust plus humidity forms an adhesive film): clean the contact points with a swab and 70 % spirit; if that fails, replace the dot.
 
 **Project note.** The flip-flop routine is something this software could provide (an all-white/all-black exercise animation, run at startup or on a schedule). It doesn't exist yet.
+
+---
+
+## 9. Open questions, and what to check first
+
+**Project note.** Things the documents leave open or that this project assumes, none tested on this display yet:
+
+- **Does the buffered store + flush work as described?** The project sends `0x84` (store) to each changed panel, then the `0x82` flush (§6, §7). If buffered sends misbehave, the fallback is `0x83` (show on receipt) per changed panel with no flush: strips then update one after another (about 9 ms apart at 38400) instead of together, but changed-panel sends no longer depend on the flush at all.
+- **Is bit 0 really the top dot?** The Protocol says so and `formats.py` follows it. If each strip shows its image upside down, the bit order (or the panels' mounting) is the other way round, and `formats.py` and `test_formats.py` need flipping.
+- **Is 57600 baud reliable on this bus?** It's the maximum the Manual lists; the project uses 38400 for now (§3).
+- **Does resending an identical panel pulse any dots?** (§5)
+
+### Checklist for the first run on the real display
+
+1. **Baud:** DS#2 on all four controllers matches `[serial] baudrate` in `config.toml` (§3).
+2. **Addresses:** read DS#1 on each controller and confirm the top strip is `address_base`, then `+1`, `+2`, `+3` going down (§1, §3). If they differ, change the switches or the mapping code.
+3. **Orientation:** show an asymmetric test image (an arrow, or text). If strips are upside down, see the bit-order question above; if they are in the wrong order, see addresses.
+4. **Flush:** show a static image, then change only one strip. The other strips must stay exactly as they were (§7). If they blank or glitch, switch to full-frame or `0x83` sends.
+5. **Identical resends:** send the same frame twice in a row and listen; a second click would mean the controller pulses dots that don't need to change. The server never resends an identical frame, so this needs a one-off script.
+6. **Power:** about 2 A at 24 V for the two panels (§4); watch for brown-outs during full-screen flips.
+
+If the bus is driven from the Pi's built-in serial port instead of a USB-to-RS485 adapter, disable Linux's serial console on that port first, or it will write to the bus.
+
+Record what you find in this document and remove the matching open questions.

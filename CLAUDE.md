@@ -41,7 +41,7 @@ From the manufacturer's manual and protocol sheet; the full reference is `docs/h
 - **The serial link is a hard budget.** A full frame is 131 bytes (4 × 32-byte strip messages + 3-byte flush): ~136 ms at 9600 baud (~7 fps), ~34 ms at 38400 (~29 fps), ~23 ms at 57600.
 - **Power:** 24 V; up to 680 mA per 14x28 panel while flipping; 1 A per panel recommended.
 - **The protocol is write-only** — no acknowledgement, checksum, or readback, so software can't detect a dot that failed to flip.
-- **Verification status is unrecorded.** The repo defaults to the mock transport and holds no record of a run against the physical display, so treat hardware behavior as unconfirmed unless `docs/hardware.md` says otherwise.
+- **Verification status is unrecorded.** The repo defaults to the mock transport and holds no record of a run against the physical display, so treat hardware behavior as unconfirmed unless `docs/hardware.md` says otherwise. Its §9 lists the open questions and a checklist for the first run on the real display.
 
 ## Design Intent
 
