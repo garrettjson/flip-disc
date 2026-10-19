@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Flip-Disc Controller</title>
-  <link rel="stylesheet" href="/static/styles.css?v=3" />
+  <link rel="stylesheet" href="/static/styles.css?v=5" />
 </head>
 <body>
   <div class="header">
@@ -55,9 +55,14 @@
     <div class="status-card">
       <h3>Preview</h3>
       <canvas id="preview" class="preview-canvas" width="280" height="280"></canvas>
+      <div id="game-controls" class="game-controls" hidden>
+        <h4>Game controls</h4>
+        <table id="game-controls-table"></table>
+        <div id="game-error" class="game-error"></div>
+      </div>
     </div>
   </div>
 
-  <script src="/static/app.js?v=4"></script>
+  <script src="/static/app.js?v=6"></script>
 </body>
 </html>

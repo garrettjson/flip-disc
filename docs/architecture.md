@@ -57,6 +57,8 @@ Each iteration, in order:
 5. `apply_processing_pipeline(gray, anim.processing_steps)` (`gfx/postprocessing.py`): each named step in order. The default is `("binarize",)`, a strict `> 0.5` threshold producing a bool array. `None` skips processing — `ClipAnimation` and every `ComposedAnimation` (including `weather`) put **float32** 0/1 frames on the queue.
 6. `queue.put(frame, timeout=0.05)`, retried until there is room or the pipeline stops.
 
+**On-demand frames (games).** When the animation has `FRAMES_ON_DEMAND` (every `Game` does), the switch sets `_on_demand` and the loop changes between steps 3 and 4: it waits on `_frame_wanted`, a `threading.Event` the presenter sets at each tick, waking every 50 ms to apply other requests. When the tick comes it applies all pending requests again (so input received up to that moment is in), then steps and renders as usual. Instead of `put`, `_hand_over` replaces whatever is in the queue with the new frame and sets the presenter's `_frame_ready` (an `asyncio.Event`, via `call_soon_threadsafe`). Nothing is computed ahead, so the buffer is effectively one frame and only exists for the handover.
+
 Animation code can raise anything, so the thread has two crash barriers, both of which log the traceback and record a message for `get_status().last_error`:
 
 - **Applying a request.** A failed switch or configure leaves the running animation untouched (a switch only drains the frame queue after the replacement has been built and configured).
@@ -64,15 +66,15 @@ Animation code can raise anything, so the thread has two crash barriers, both of
 
 Consequences worth knowing:
 
-- **The generator runs ahead, then idles.** It fills the queue as fast as it can, then produces exactly one frame each time the presenter takes one. Every frame shown was computed up to `buffer_duration` (1 s) earlier.
-- **A switch drains the queue; a configure does not.** A live `configure` becomes visible only after the frames already queued have played out.
+- **The generator runs ahead, then idles.** It fills the queue as fast as it can, then produces exactly one frame each time the presenter takes one. Every frame shown was computed up to `buffer_duration` (1 s) earlier. On-demand animations are the exception: each frame is computed at the tick that shows it.
+- **A switch drains the queue; a configure does not.** A live `configure` becomes visible only after the frames already queued have played out (on the next tick for on-demand animations).
 - **One produced frame = one display interval of animation time.** Animation speeds are therefore in real units per second as long as the generator keeps up; when it can't, the display shows slow motion, not dropped frames.
 
 ### Presenter loop (`_present_loop`)
 
 Deadline-paced: `next_deadline += frame_interval` each tick, then:
 
-1. `queue.get_nowait()`. If the queue is empty, sleep to the deadline and try again — the display simply holds its last frame.
+1. `queue.get_nowait()`. If the queue is empty, sleep to the deadline and try again — the display simply holds its last frame. For an on-demand animation, `_request_frame` instead sets `_frame_wanted` and awaits `_frame_ready` until the tick's deadline. A frame that misses the deadline stays in the queue and is shown on the next tick without asking for another. Measured with the mock transport, input reaches the written frame 25 ms after it is sent on average and 50 ms at worst (one tick at 20 fps).
 2. `_write_frame`: split into panels and compare each with what that panel was last sent (`_sent_panels`). **If none changed, nothing is written to serial.**
 3. Otherwise encode only the changed panels plus the flush (`ProtocolEncoder.encode_panels`), `await serial.write_frames([batch])`, record what each panel now shows, store a copy as `_last_frame`, and increment `frames_presented`. `_sent_panels` is cleared by `start` and `reconnect_serial`, so the first frame after either sends every panel.
 4. Offer a copy to the preview queue (dropped if the queue is full).
@@ -102,11 +104,12 @@ HTTP handlers run on the event loop and call `DisplayPipeline` methods. None of 
 | `set_animation(name, params)` | `_requests` ← `("switch", …)` | construct, configure, then drain the frame queue |
 | `configure_animation(params)` | `_requests` ← `("configure", …)` | `anim.configure(**params)` |
 | `reset()` | `_requests` ← `("reset", None)` | `anim.reset()` |
+| `send_input(action, pressed)` | `_requests` ← `("input", …)` | `game.handle_input(action, pressed)` |
 | `play()` / `pause()` | `_play_event` | run / idle |
 
-All three request kinds go onto one `queue.SimpleQueue` and are applied in order, so:
+All request kinds go onto one `queue.SimpleQueue` and are applied in order, so:
 
-- **Validation happens before handoff.** `set_animation` and `configure_animation` call `validate_params(name, params)`, which checks the request against the animation class's declared `PARAMS` without needing an instance. An unknown animation, unknown parameter, wrong type, or out-of-range value raises `AnimationError`, which the routes return as a 400. `configure_animation` validates against the animation most recently *requested*, since a switch may still be in the queue.
+- **Validation happens before handoff.** `send_input` checks that the animation most recently requested is a game with that action (`validate_input`). `set_animation` and `configure_animation` call `validate_params(name, params)`, which checks the request against the animation class's declared `PARAMS` without needing an instance. An unknown animation, unknown parameter, wrong type, or out-of-range value raises `AnimationError`, which the routes return as a 400. `configure_animation` validates against the animation most recently *requested*, since a switch may still be in the queue.
 - The HTTP response is sent **before** the change is applied, so anything that fails later (a missing clip or image file, a bad `layer.<id>.<key>` value, an animation bug) shows up only in `last_error` on `GET /status`.
 - Requests are not lost or reordered: a switch followed immediately by a configure applies both, to the new animation.
 - `last_error` is cleared by the next successful switch, or by a later success of the same kind of request.
@@ -118,7 +121,8 @@ All three request kinds go onto one `queue.SimpleQueue` and are applied in order
 - `WS /ws/preview` registers a callback with `set_preview_callback`. The presenter drops each frame into an `asyncio.Queue(maxsize=1)`; a consumer task fires the callback, which sets an event; the handler then sends `get_last_frame_bits()` as JSON `{width, height, bits}`.
 - **One preview client at a time.** Registering a callback replaces the previous one, and a disconnecting client clears it, which also stops the preview for any other connected client.
 - The preview shows `_last_frame`, i.e. the last frame *written to serial*, so it mirrors what the panels were told to show.
-- The UI (`web/index.html`, `web/static/app.js`) is static files with no build step. `GET /animations` returns the animation names and, under `params`, each one's parameter schema; the UI builds its form from that (number inputs with min/max/step, checkboxes, selects for `choices`) and shows the server's message when a value is rejected. Changing a control sends just that one parameter to `POST /animations/configure`. The only hard-coded fields are latitude and longitude for the weather fetch loop, which configure the server's data source and are not animation parameters.
+- `WS /ws/input` and `POST /input` take `{action, pressed}` and call `send_input`. The socket answers only bad messages, with `{"error": …}`.
+- The UI (`web/index.html`, `web/static/app.js`) is static files with no build step. `GET /animations` returns the animation names, the game names (`games`), each one's parameter schema under `params`, and each game's controls under `controls`. While a game is playing, the UI lists its controls under the preview and sends the mapped keys over `/ws/input`, ignoring key auto-repeat and keys typed into form fields, and releasing held keys when the window loses focus. The rest of the form works as for animations: it builds its form from the schema (number inputs with min/max/step, checkboxes, selects for `choices`) and shows the server's message when a value is rejected. Changing a control sends just that one parameter to `POST /animations/configure`. The only hard-coded fields are latitude and longitude for the weather fetch loop, which configure the server's data source and are not animation parameters.
 - The preview canvas draws each dot as a disc. A dot that changes animates a half-turn about its horizontal axis (`DISC` in `app.js`; the ~60 ms flip time is a visual guess, not measured on the panels). The animation is cosmetic and client-side only: the frames, and what is sent to serial, are unchanged.
 
 ## 6. Animations

@@ -21,6 +21,8 @@ async function postJSON(path, payload) {
 
 // Parameter schema per animation, served by GET /animations (see animations/params.py)
 let paramSchemas = {};
+// Controls per game, {action, label, keys}, served by GET /animations (see games/base.py)
+let gameControls = {};
 
 // Inputs for the weather fetch loop (POST /weather/config). These configure the
 // server's data source, not the animation, so they are not part of its schema.
@@ -48,6 +50,9 @@ const paramsContainer = document.getElementById('params-container');
 const paramErrorEl = document.getElementById('param-error');
 const currentAnimEl = document.getElementById('current-anim');
 const lastErrorEl = document.getElementById('last-error');
+const gameControlsEl = document.getElementById('game-controls');
+const gameControlsTable = document.getElementById('game-controls-table');
+const gameErrorEl = document.getElementById('game-error');
 
 // Preview drawn as a board of discs. A disc that changes turns half a revolution
 // about its horizontal axis, so mid-flip it shows as a thin ellipse. Its angle runs
@@ -172,12 +177,21 @@ window.addEventListener('resize', () => {
 async function loadAnimations() {
   const data = await fetchJSON('/animations');
   paramSchemas = data.params || {};
+  gameControls = data.controls || {};
   animSelect.innerHTML = '';
-  (data.animations || []).forEach(name => {
-    const opt = document.createElement('option');
-    opt.value = name; opt.textContent = name;
-    animSelect.appendChild(opt);
-  });
+  const addGroup = (label, names) => {
+    if (!names || names.length === 0) return;
+    const group = document.createElement('optgroup');
+    group.label = label;
+    names.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name; opt.textContent = name;
+      group.appendChild(opt);
+    });
+    animSelect.appendChild(group);
+  };
+  addGroup('Animations', data.animations);
+  addGroup('Games', data.games);
   updateAnimationParams();
 }
 
@@ -312,12 +326,13 @@ async function refreshStatus() {
   fpsEl.textContent = s.config?.refresh_rate ?? '-';
   presentedEl.textContent = (p.frames_presented ?? 0).toString();
   currentAnimEl.textContent = p.animation ?? '-';
+  setRunningGame(p.playing && gameControls[p.animation] ? p.animation : null);
   lastErrorEl.textContent = p.last_error ?? '';
   if (s.config) {
     sizeEl.textContent = `${s.config.width} x ${s.config.height}`;
   }
   const cap = p.buffer_capacity !== undefined ? p.buffer_capacity : '-';
-  bufferEl.textContent = `capacity ${cap}`;
+  bufferEl.textContent = p.frames_on_demand ? 'none (frames made on demand)' : `capacity ${cap}`;
 }
 
 // Live preview over WebSocket; falls back to HTTP polling on disconnect
@@ -343,6 +358,84 @@ function connectPreviewWS() {
   }
 }
 
+// --- Game input ---------------------------------------------------------
+// While a game is running, keys mapped to its actions are sent over
+// /ws/input as {action, pressed}. The server only sees actions, never keys.
+
+let runningGame = null;
+let keyToAction = {};
+const heldKeys = new Set();
+let inputWS = null;
+
+const KEY_NAMES = { ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓', Space: 'Space' };
+function keyName(code) {
+  if (KEY_NAMES[code]) return KEY_NAMES[code];
+  return code.replace(/^Key|^Digit/, '');
+}
+
+function setRunningGame(name) {
+  if (name === runningGame) return;
+  releaseAllKeys();
+  runningGame = name;
+  keyToAction = {};
+  gameControlsTable.innerHTML = '';
+  gameErrorEl.textContent = '';
+  gameControlsEl.hidden = !name;
+  if (!name) return;
+  gameControls[name].forEach(control => {
+    control.keys.forEach(code => { keyToAction[code] = control.action; });
+    const row = gameControlsTable.insertRow();
+    row.insertCell().innerHTML = control.keys.map(k => `<kbd>${keyName(k)}</kbd>`).join('');
+    row.insertCell().textContent = control.label;
+  });
+}
+
+function sendInput(action, pressed) {
+  if (inputWS && inputWS.readyState === WebSocket.OPEN) {
+    inputWS.send(JSON.stringify({ action, pressed }));
+  }
+}
+
+function releaseAllKeys() {
+  heldKeys.forEach(code => sendInput(keyToAction[code], false));
+  heldKeys.clear();
+}
+
+function isTyping(target) {
+  return ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName);
+}
+
+function onKey(event, pressed) {
+  const action = keyToAction[event.code];
+  if (!runningGame || !action || isTyping(event.target)) return;
+  event.preventDefault();  // arrows and space would scroll the page
+  if (pressed) {
+    if (event.repeat || heldKeys.has(event.code)) return;
+    heldKeys.add(event.code);
+  } else {
+    if (!heldKeys.delete(event.code)) return;
+  }
+  sendInput(action, pressed);
+}
+
+document.addEventListener('keydown', e => onKey(e, true));
+document.addEventListener('keyup', e => onKey(e, false));
+// A key released while the window is in the background never sends keyup
+window.addEventListener('blur', releaseAllKeys);
+
+function connectInputWS() {
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  inputWS = new WebSocket(`${proto}://${window.location.host}/ws/input`);
+  inputWS.onmessage = (ev) => {
+    try {
+      gameErrorEl.textContent = JSON.parse(ev.data).error || '';
+    } catch (_) {
+      // ignore
+    }
+  };
+  inputWS.onclose = () => setTimeout(connectInputWS, 2000);
+}
+
 async function startSelected() {
   const name = animSelect.value;
   if (!name) {
@@ -362,6 +455,8 @@ async function startSelected() {
 
   try {
     await postJSON(`/anim/${encodeURIComponent(sel)}`, params);
+    // Otherwise the focused dropdown or button would take the game's keys
+    if (gameControls[sel]) document.activeElement.blur();
 
     // For weather, also configure the background fetch loop
     if (sel === 'weather') {
@@ -408,5 +503,6 @@ animSelect.addEventListener('change', updateAnimationParams);
   updateAnimationParams();
   await refreshStatus();
   connectPreviewWS();
+  connectInputWS();
   setInterval(refreshStatus, 1000);
 })();

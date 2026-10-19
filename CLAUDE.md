@@ -10,6 +10,7 @@ Python flip-disc display controller for Raspberry Pi. Drives AlfaZeta flip-dot p
 | How the code works today, end to end (threads, frame lifecycle, control path) | `docs/architecture.md` |
 | The panels: wiring, DIP switches, power, refresh limits, protocol, maintenance | `docs/hardware.md` |
 | Writing or changing an animation | `flipdisc/animations/CLAUDE.md` |
+| Writing or changing a game | `flipdisc/games/CLAUDE.md` |
 | Changing protocol, panel mapping, or serial code | `flipdisc/hardware/CLAUDE.md` |
 
 When behavior or hardware knowledge changes, update the matching doc in the same change.
@@ -55,7 +56,7 @@ Decisions the owner has made about the refactor (October 2026):
 - **Python for everything, for the time being.** A rewrite in another language was considered and set aside.
 - **Performance work comes last.** No Numba or other compiled kernels until the structural work is done, even though `simplex_noise` (~27 ms per frame) is too slow today. `fluid` costs about 3 ms on the dev machine (unmeasured on a Pi); every other animation costs under 3 ms.
 - **Animations declare their parameters** (type, default, range) so the API validates them and the web UI builds its controls from the schema. Built: see `flipdisc/animations/params.py`.
-- **Keep a frame buffer of about one second**, not a single-frame handoff. (`buffer_duration = 1.0`.)
+- **Keep a frame buffer of about one second**, not a single-frame handoff. (`buffer_duration = 1.0`.) **Games are the exception** (October 2026): input latency matters more than absorbing slow frames, so their frames are made at each tick (`FRAMES_ON_DEMAND`).
 - Don't make other structural changes to `engine/`, `animations/base.py`, or the API boundary without checking what has been agreed.
 
 ---
@@ -79,6 +80,7 @@ Before calling a change done: run the tests, run `ruff check` and `ruff format -
 
 - `flipdisc/engine/pipeline.py` — `DisplayPipeline`: generator thread + async presenter, connected by `queue.Queue`
 - `flipdisc/animations/` — animation classes + decorator-based registry (see `flipdisc/animations/CLAUDE.md` for the authoring checklist)
+- `flipdisc/games/` — interactive games: `Game` (an `Animation` that takes input) and `Control`; games share the animation registry (see `flipdisc/games/CLAUDE.md`)
 - `flipdisc/hardware/` — RS-485 encoding (`spec` -> `formats` -> `protocol`), `panel_map` (canvas -> per-panel bits), `serial` (hardware + mock transports)
 - `flipdisc/gfx/` — `postprocessing` (binarize, dither, blur, sharpen, threshold, downsample), `terminal` (debug frame printing)
 - `flipdisc/web/` — `api_server.py` (FastAPI routes + WebSocket preview + weather fetch loop), `index.html` + `static/` (web UI)
@@ -94,7 +96,8 @@ Before calling a change done: run the tests, run `ruff check` and `ruff format -
 
 - **Generator thread** steps the animation, applies its `processing_steps`, and pushes frames into `queue.Queue(maxsize=refresh_rate * buffer_duration)`. It blocks on `put(timeout=0.05)` when full — natural backpressure.
 - **Presenter** (async task) pulls one frame per tick at `refresh_rate`, splits it into panels, encodes, writes to serial, and feeds the preview queue. Only the panels whose bits changed since they were last sent are written, followed by the flush (no needless wire time or disc pulses); a frame identical to the last one writes nothing, and `frames_presented` only counts frames actually written. After `start` or `reconnect_serial` the next frame sends every panel.
-- **Cross-thread requests** go through one ordered queue (`_requests`) that the generator empties at the top of each iteration: `switch` (drains the frame queue once the new animation is built), `configure`, and `reset`. So `set_animation` / `configure_animation` / `reset` return before the change is applied; errors raised while applying them are recorded in `get_status().last_error` instead of reaching the caller.
+- **Games (any animation with `FRAMES_ON_DEMAND`) skip the buffer.** At each tick the presenter asks for a frame; the generator applies pending requests, including input, steps once, renders, and hands the frame straight over. Input sent before a tick shows on that tick: 25 ms on average, 50 ms at worst at 20 fps.
+- **Cross-thread requests** go through one ordered queue (`_requests`) that the generator empties at the top of each iteration: `switch` (drains the frame queue once the new animation is built), `configure`, `reset`, and `input` (game presses and releases). So `set_animation` / `configure_animation` / `reset` return before the change is applied; errors raised while applying them are recorded in `get_status().last_error` instead of reaching the caller.
 
 ### DisplayPipeline public API
 
@@ -105,18 +108,20 @@ All async except `get_status()`, `get_last_frame_bits()`, `set_preview_callback(
 - `set_animation(name, params)` — switch animation; raises `AnimationError` on an unknown name or invalid params
 - `configure_animation(params)` — update params on the running animation in place; validated against the schema of the animation most recently requested
 - `reset()` — reset current animation state
-- `get_status()` -> `PipelineStatus(running, playing, frames_presented, buffer_capacity, animation, last_error)`
+- `send_input(action, pressed=True)` — press or release an action of the running game; raises `AnimationError` if the animation most recently requested isn't a game or has no such action
+- `get_status()` -> `PipelineStatus(running, playing, frames_presented, buffer_capacity, animation, last_error, frames_on_demand)`
 - `get_last_frame_bits()` -> last written frame
 - `set_preview_callback(cb)` — single callback, used by the WebSocket preview
 - `set_refresh_rate(fps)` / `reconnect_serial()` — runtime config
 
 ### HTTP API
 
-- `GET /status`, `/animations` (names plus each animation's parameter schema), `/fonts`, `/clips`, `/images`, `/fps`, `/weather/config`
+- `GET /status`, `/animations` (animation names, game names, every parameter schema, and each game's controls), `/fonts`, `/clips`, `/images`, `/fps`, `/weather/config`
 - `POST /anim/{name}` (JSON body = params) — start/switch and play; 400 on an unknown name or invalid params
 - `POST /animations/configure` — live param update (400 on invalid params); `POST /animations/reset`; `POST /animations/stop` (pauses)
 - `POST /fps?new_fps=15`, `POST /serial/reconnect`
 - `POST /weather/config` `{latitude, longitude, unit, interval_seconds}` — starts the background fetch loop; `POST /weather/refresh`
+- `POST /input` `{action, pressed}` — press or release a game action (400 unless a game with that action is running); `WS /ws/input` takes the same messages, replying only to bad ones with `{"error": ...}`
 - `WS /ws/preview` — pushes `{width, height, bits}` JSON per frame; `GET /ui` — web UI
 
 ---
@@ -124,6 +129,8 @@ All async except `get_status()`, `get_last_frame_bits()`, `set_preview_callback(
 ## Animations
 
 Registered names: `bouncing_dot`, `clip`, `clock`, `composed`, `fluid`, `image`, `life`, `pendulum`, `rain_splash`, `sandpile`, `simplex_noise`, `text`, `weather`, `wireframe_cube`.
+
+Games (`flipdisc/games/`, listed separately by `GET /animations`): none yet.
 
 Unregistered building blocks: `SupersampledAnimation` (render at N× and block-average for anti-aliasing), `AnalogClockAnimation` (used by `clock` with `style="analog"`), `WeatherIconAnimation` + `precipitation.py` effects (used by `weather`).
 
@@ -171,7 +178,7 @@ class WeatherDashboard(ComposedAnimation):
 Verified behaviors that are easy to trip over. Delete an entry when you fix it.
 
 - **Bad requests get a 400; failures after handoff show up in `/status`.** An unknown animation name, an unknown parameter, or a value of the wrong type or out of range is rejected before anything reaches the generator. What can still fail afterwards — a clip name that isn't in `clips.toml`, an image path that doesn't exist, a bad `layer.<id>.<key>` value, an animation bug — is logged and recorded in `pipeline.last_error` on `GET /status`, after the request has already returned 200. A failed switch or configure leaves the current animation running; an animation that raises while running is dropped (`animation` becomes `null`) and the display holds its last frame until the next successful switch.
-- **Live `configure` lags by up to `buffer_duration` (1 s).** The generator computes ahead to fill the frame buffer, so a parameter change only shows once the frames already queued have played out. Switching animations is immediate (it drains the buffer).
+- **Live `configure` lags by up to `buffer_duration` (1 s).** The generator computes ahead to fill the frame buffer, so a parameter change only shows once the frames already queued have played out. Switching animations is immediate (it drains the buffer). Games don't buffer, so for them it shows on the next tick.
 - **Whole-step speeds are snapped to the frame rate.** `Cadence` rounds a requested rate to a whole number of frames per step, so at 20 fps the achievable pixel speeds are 20, 10, 6.67, 5, 4, … px/s (or 40, 60, … above one pixel per frame). A requested 13 px/s plays at 10. This is deliberate; see `flipdisc/animations/CLAUDE.md`, "Motion".
 - **A slow animation plays in slow motion.** Each produced frame advances the animation by exactly one display interval, so if frames take longer than that to compute, the display falls behind real time instead of skipping.
 - **Clips are GIFs** listed in `assets/clips/clips.toml` (create with `flipdisc/clips/importer.py`). Some docstrings still say `.npz`. No clips are checked in.

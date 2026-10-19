@@ -1,5 +1,9 @@
 """Animation module for flip-disc displays."""
 
+# Games live in flipdisc/games but share this registry; importing them here
+# registers them wherever animations are looked up.
+from flipdisc import games  # noqa: F401
+
 # Import all animations to register them
 from . import (
     bouncing_dot,
