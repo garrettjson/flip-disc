@@ -4,7 +4,7 @@ Games share the animation registry, so importing a game module registers it
 under its name like any animation. Import every game module here.
 """
 
-from . import snake
+from . import snake, tetris
 from .base import Control, Game, game_controls, is_game, list_games, validate_input
 
 __all__ = [
@@ -14,5 +14,6 @@ __all__ = [
     "is_game",
     "list_games",
     "snake",
+    "tetris",
     "validate_input",
 ]
