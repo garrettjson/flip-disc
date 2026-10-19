@@ -19,6 +19,7 @@
 - **`processing_steps`** defaults to `("binarize",)`. Pass `None` when the output is already 1-bit or when layers handle their own processing (`ClipAnimation`, `ComposedAnimation`).
 - **Finite animations** set `self._completed = True` when done; `is_complete()` reports it.
 - Put `@override` on every overridden method.
+- Import scipy (or another slow library only your animation needs) with `lazy from scipy.ndimage import convolve`, so server startup and other animations don't pay for it. Never make the import in `__init__.py` lazy: that's what registers the animation.
 
 ## Parameters
 

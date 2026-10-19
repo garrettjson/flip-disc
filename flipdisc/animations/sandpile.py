@@ -15,8 +15,6 @@ The spout stays at the top and sweeps from side to side on a sine wave
 around ``pour_position``, laying down a moving ridge of piles.
 """
 
-from __future__ import annotations
-
 import math
 from dataclasses import dataclass
 from typing import override

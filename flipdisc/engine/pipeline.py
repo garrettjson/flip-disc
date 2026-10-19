@@ -12,8 +12,6 @@ presenter asks for a frame, and the generator applies pending input, steps
 once, and renders it right then, so input shows on the next tick.
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import logging
@@ -318,9 +316,9 @@ class DisplayPipeline:
             return self._frame_queue.get_nowait()
 
         self._frame_wanted.set()
-        timeout = max(0.0, deadline - asyncio.get_running_loop().time())
         try:
-            await asyncio.wait_for(self._frame_ready.wait(), timeout)
+            async with asyncio.timeout_at(deadline):
+                await self._frame_ready.wait()
         except TimeoutError:
             return None
         try:

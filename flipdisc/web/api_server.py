@@ -1,7 +1,5 @@
 """API server for control and status (FastAPI)."""
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import json
@@ -10,11 +8,11 @@ import tomllib
 from pathlib import Path
 from typing import Annotated
 
-import httpx
 import uvicorn
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+lazy import httpx
 
 from flipdisc.animations import animation_schemas
 from flipdisc.animations import list_animations as list_animation_names
@@ -367,7 +365,7 @@ class ApiServer:
             message = json.loads(text)
             action = message["action"]
             pressed = message.get("pressed", True)
-        except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+        except json.JSONDecodeError, KeyError, TypeError, AttributeError:
             return 'expected {"action": str, "pressed": bool}'
         if not isinstance(action, str) or not isinstance(pressed, bool):
             return 'expected {"action": str, "pressed": bool}'

@@ -11,8 +11,6 @@ That declaration is the single source for three things:
   controls from it.
 """
 
-from __future__ import annotations
-
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -20,8 +18,8 @@ from typing import Any
 
 from flipdisc.exceptions import AnimationError
 
-_TRUE_STRINGS = {"true", "1", "yes", "on"}
-_FALSE_STRINGS = {"false", "0", "no", "off"}
+_TRUE_STRINGS = frozenset({"true", "1", "yes", "on"})
+_FALSE_STRINGS = frozenset({"false", "0", "no", "off"})
 
 
 @dataclass(frozen=True)
@@ -157,10 +155,12 @@ class Param:
         return schema
 
 
-_TYPE_NAMES = {
-    float: "a number",
-    int: "a whole number",
-    bool: "true or false",
-    str: "a string",
-    list: "a list",
-}
+_TYPE_NAMES = frozendict(
+    {
+        float: "a number",
+        int: "a whole number",
+        bool: "true or false",
+        str: "a string",
+        list: "a list",
+    }
+)

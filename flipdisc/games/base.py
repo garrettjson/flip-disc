@@ -13,8 +13,6 @@ pipeline, preview, and API run it like any animation, with two differences:
   renders, so a press shows on the very next frame.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Any, ClassVar
 

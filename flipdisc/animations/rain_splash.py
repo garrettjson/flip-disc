@@ -7,8 +7,6 @@ from a normal distribution, so most rings die young and the surface stays
 readable instead of filling with full-screen circles.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from typing import override
 

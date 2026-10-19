@@ -27,6 +27,8 @@ The animation object is created, configured, stepped, and rendered **only on the
 3. `pipeline.start("bouncing_dot")` connects serial, queues the initial animation as the generator's first request, starts the generator thread, and starts the presenter task. **Nothing is displayed yet**: the generator waits until `play()` is called, which happens on the first `POST /anim/{name}`.
 4. uvicorn serves the API.
 
+Imports that are slow and needed by only some code paths are `lazy` (PEP 810), so they load on first use: scipy (blur, dither and sharpen in `gfx/postprocessing.py`, `life`, `fluid`), httpx (the first weather fetch), and in `cli.py` uvicorn and the server stack, which `preview` never touches. The first frame of an animation that uses scipy pays its import (a few hundred ms on the dev machine), which the frame buffer absorbs. The animation and game modules themselves are imported normally: they register when they run, so running with `-X lazy_imports=all` leaves the registry empty.
+
 `--reload` takes a different path: uvicorn imports `flipdisc.app:create_asgi_app` as a factory and manages the pipeline through a lifespan hook. The factory is called with no arguments, so in reload mode `--config` and `--log-level` are not passed through (config is discovered from the working directory).
 
 ## 3. The life of a frame
@@ -155,3 +157,14 @@ Assets are found by **working-directory-relative paths** (`assets/text/fonts.tom
 ## 9. Tests
 
 `flipdisc/tests/`, run with `uv run pytest -q`. Mostly unit tests on animations, fonts, clips, weather parsing (httpx mocked), moon phase, and the encoder (`test_formats.py`). `test_basic.py` and `test_pacing.py` start a real `DisplayPipeline` on the mock transport and sleep for real time, which is most of the suite's ~20 s. Nothing tests against hardware.
+
+## 10. Measuring frame cost
+
+Python 3.15's sampling profiler (Tachyon) reads a running process's stacks without changing any code, which makes it the tool for measuring frame cost on the Pi:
+
+```
+python -m profiling.sampling attach -a --sort tottime -d 10 <server pid>
+python -m profiling.sampling run -a --sort tottime -m flipdisc preview -a fluid -n 200
+```
+
+`-a` samples every thread; without it only the main thread is sampled, and animations run on the generator thread. `--flamegraph -o out.html` writes a flame graph instead. On macOS both forms need `sudo -E`. On Linux, attaching may need it too, depending on the kernel's ptrace setting; this hasn't been tried on the Pi.

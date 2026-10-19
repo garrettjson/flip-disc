@@ -10,8 +10,6 @@ Configure with:
     unit      — "F" or "C" (default "F")
 """
 
-from __future__ import annotations
-
 from typing import Any, override
 
 import numpy as np

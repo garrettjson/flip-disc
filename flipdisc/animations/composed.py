@@ -26,8 +26,6 @@ register with @register_animation. The API then starts it by name::
     # API: POST /anim/weather_dashboard {"temp": 72}
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from typing import Any, override
 
@@ -40,10 +38,12 @@ from .base import Animation, get_animation, register_animation, validate_params
 from .params import Param
 
 # Layer fields managed directly on _Layer (not forwarded to sub-animation)
-_LAYER_FIELDS = {
-    "blend": Param("blend", str, "over", choices=("over", "add")),
-    "visible": Param("visible", bool, True),
-}
+_LAYER_FIELDS = frozendict(
+    {
+        "blend": Param("blend", str, "over", choices=("over", "add")),
+        "visible": Param("visible", bool, True),
+    }
+)
 
 
 def _validate_layer_spec(spec: Any) -> None:

@@ -55,6 +55,8 @@ Decisions the owner has made about the refactor (October 2026):
 
 - **Python for everything, for the time being.** A rewrite in another language was considered and set aside.
 - **Performance work comes last.** No Numba or other compiled kernels until the structural work is done, even though `simplex_noise` (~27 ms per frame) is too slow today. `fluid` costs about 3 ms on the dev machine (unmeasured on a Pi); every other animation costs under 3 ms.
+- **Free-threading is the first thing to consider if one animation needs more than one core; not adopted yet.** Tried October 2026 with uv's free-threaded 3.15 on the dev machine: all tests passed, the GIL stayed off with every dependency imported, single-threaded frame cost was unchanged, and every compiled dependency has free-threaded wheels for the Pi except watchfiles (needed only for `--reload`). Presenter timing showed no measurable gain, because no animation uses enough CPU for the GIL to matter. To switch: set `.python-version` to `3.15t`, and add a test that fails if `sys._is_gil_enabled()` is true, since a dependency without free-threading support silently turns the GIL back on.
+- **No JIT.** 3.15's JIT isn't in uv's builds, so using it means building and maintaining our own CPython on the Pi. It's still experimental, and it speeds up Python bytecode, not the numpy code where heavy animations spend their time.
 - **Animations declare their parameters** (type, default, range) so the API validates them and the web UI builds its controls from the schema. Built: see `flipdisc/animations/params.py`.
 - **Keep a frame buffer of about one second**, not a single-frame handoff. (`buffer_duration = 1.0`.) **Games are the exception** (October 2026): input latency matters more than absorbing slow frames, so their frames are made at each tick (`FRAMES_ON_DEMAND`).
 - Don't make other structural changes to `engine/`, `animations/base.py`, or the API boundary without checking what has been agreed.
@@ -65,7 +67,7 @@ Decisions the owner has made about the refactor (October 2026):
 
 Run everything **from the repo root** — fonts, clips, and config are loaded via cwd-relative paths (`assets/...`, `config.toml`).
 
-- Install: `uv sync --extra dev` (Python 3.11+)
+- Install: `uv sync --extra dev` (Python 3.15, pinned in `.python-version`; uv installs it if missing)
 - Test: `uv run pytest -q` (~25s)
 - Lint: `uv run ruff check --fix`
 - Format: `uv run ruff format`
@@ -216,10 +218,13 @@ Run with `uv run python <script>` from the repo root. To see what the server is 
 
 ## Conventions
 
-- Ruff for linting and formatting (line-length 88, py311 target). Both `ruff check` and `ruff format --check` pass on the whole repo; keep it that way, so a new warning always means something you just wrote
+- Ruff for linting and formatting (line-length 88, py315 target; Markdown is excluded from the formatter so doc examples keep their aligned comments). Both `ruff check` and `ruff format --check` pass on the whole repo; keep it that way, so a new warning always means something you just wrote
 - Guard clauses and early returns over nested `if`s
 - Catch specific exception types, not `except Exception`. Broad catches are acceptable only at thread/task crash barriers, and must log.
 - Exception layering: lower layers raise typed `FlipDiscError` subclasses with context; the top level (API routes, loops) decides severity and HTTP status
 - `@override` (from `typing`) on every overridden animation method
 - Whole-pixel or discrete motion goes through `Cadence` so its rhythm is even; only continuous values scale by `dt` directly (see `flipdisc/animations/CLAUDE.md`, "Motion")
+- `lazy import` (PEP 810) for imports that are slow and needed by only some code paths: scipy, httpx, uvicorn, and the server stack in `cli.py`. Never for the animation and game modules, which register when they run (`docs/architecture.md` §2)
+- Constant lookup tables are `frozendict` / `frozenset`, not `dict` / `set`
+- No `from __future__ import annotations`; on 3.14+ annotations are already evaluated lazily
 - Tests live in `flipdisc/tests/test_*.py`; no hardware or network access in tests (mock serial, patched httpx)

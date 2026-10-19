@@ -5,8 +5,6 @@ RainEffect renders falling rain streaks over a cloud icon.
 LightningEffect renders animated lightning bolts below a cloud icon.
 """
 
-from __future__ import annotations
-
 import enum
 import random
 from collections import defaultdict
@@ -124,44 +122,45 @@ _RAIN_1 = ((0, 0),)
 _RAIN_2 = ((0, 0), (1, 0))
 _RAIN_3 = ((0, 0), (1, 0), (2, 0))
 
-_RAIN_SHAPES_BY_SIZE = {
-    1: [_RAIN_1],
-    2: [_RAIN_1, _RAIN_2],
-    3: [_RAIN_1, _RAIN_2, _RAIN_3],
-}
+_RAIN_SHAPES_BY_SIZE = frozendict(
+    {
+        1: [_RAIN_1],
+        2: [_RAIN_1, _RAIN_2],
+        3: [_RAIN_1, _RAIN_2, _RAIN_3],
+    }
+)
 
 # Per-WMO-code rain presets
-WMO_RAIN_PRESETS: dict[int, dict] = {
-    51: {"spawn_rate": 0.33, "fall_speed": 2.67, "droplet_size": 1},  # Light drizzle
-    53: {"spawn_rate": 0.5, "fall_speed": 3.0, "droplet_size": 1},  # Moderate drizzle
-    55: {"spawn_rate": 0.83, "fall_speed": 3.33, "droplet_size": 1},  # Dense drizzle
-    56: {
-        "spawn_rate": 0.33,
-        "fall_speed": 2.33,
-        "droplet_size": 1,
-    },  # Light freezing drizzle
-    57: {
-        "spawn_rate": 0.83,
-        "fall_speed": 3.0,
-        "droplet_size": 1,
-    },  # Dense freezing drizzle
-    61: {"spawn_rate": 0.67, "fall_speed": 4.0, "droplet_size": 2},  # Slight rain
-    63: {"spawn_rate": 1.0, "fall_speed": 4.67, "droplet_size": 2},  # Moderate rain
-    65: {"spawn_rate": 1.67, "fall_speed": 6.0, "droplet_size": 3},  # Heavy rain
-    66: {
-        "spawn_rate": 0.67,
-        "fall_speed": 3.67,
-        "droplet_size": 2,
-    },  # Light freezing rain
-    67: {
-        "spawn_rate": 1.5,
-        "fall_speed": 5.33,
-        "droplet_size": 3,
-    },  # Heavy freezing rain
-    80: {"spawn_rate": 0.83, "fall_speed": 4.67, "droplet_size": 2},  # Slight showers
-    81: {"spawn_rate": 1.33, "fall_speed": 5.33, "droplet_size": 3},  # Moderate showers
-    82: {"spawn_rate": 2.0, "fall_speed": 6.67, "droplet_size": 3},  # Violent showers
-}
+WMO_RAIN_PRESETS: frozendict[int, frozendict[str, float]] = frozendict(
+    {
+        # Light drizzle
+        51: frozendict(spawn_rate=0.33, fall_speed=2.67, droplet_size=1),
+        # Moderate drizzle
+        53: frozendict(spawn_rate=0.5, fall_speed=3.0, droplet_size=1),
+        # Dense drizzle
+        55: frozendict(spawn_rate=0.83, fall_speed=3.33, droplet_size=1),
+        # Light freezing drizzle
+        56: frozendict(spawn_rate=0.33, fall_speed=2.33, droplet_size=1),
+        # Dense freezing drizzle
+        57: frozendict(spawn_rate=0.83, fall_speed=3.0, droplet_size=1),
+        # Slight rain
+        61: frozendict(spawn_rate=0.67, fall_speed=4.0, droplet_size=2),
+        # Moderate rain
+        63: frozendict(spawn_rate=1.0, fall_speed=4.67, droplet_size=2),
+        # Heavy rain
+        65: frozendict(spawn_rate=1.67, fall_speed=6.0, droplet_size=3),
+        # Light freezing rain
+        66: frozendict(spawn_rate=0.67, fall_speed=3.67, droplet_size=2),
+        # Heavy freezing rain
+        67: frozendict(spawn_rate=1.5, fall_speed=5.33, droplet_size=3),
+        # Slight showers
+        80: frozendict(spawn_rate=0.83, fall_speed=4.67, droplet_size=2),
+        # Moderate showers
+        81: frozendict(spawn_rate=1.33, fall_speed=5.33, droplet_size=3),
+        # Violent showers
+        82: frozendict(spawn_rate=2.0, fall_speed=6.67, droplet_size=3),
+    }
+)
 
 
 @dataclass
@@ -261,11 +260,13 @@ class RainEffect:
 # --- Lightning effect ---
 
 # Per-WMO-code thunderstorm presets
-WMO_THUNDER_PRESETS: dict[int, dict] = {
-    95: {"strike_interval": 900.0},  # Slight/moderate thunderstorm
-    96: {"strike_interval": 540.0},  # Moderate with hail
-    99: {"strike_interval": 180.0},  # Heavy with hail
-}
+WMO_THUNDER_PRESETS: frozendict[int, frozendict[str, float]] = frozendict(
+    {
+        95: frozendict(strike_interval=900.0),  # Slight/moderate thunderstorm
+        96: frozendict(strike_interval=540.0),  # Moderate with hail
+        99: frozendict(strike_interval=180.0),  # Heavy with hail
+    }
+)
 
 
 class _LightningState(enum.Enum):

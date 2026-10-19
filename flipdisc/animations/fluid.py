@@ -20,14 +20,12 @@ left face of cell (j, i), `v[j, i]` the y-velocity on its top face. y points
 down.
 """
 
-from __future__ import annotations
-
 import math
 from typing import Any, override
 
 import numpy as np
-from scipy.linalg import solveh_banded
-from scipy.spatial import cKDTree
+lazy from scipy.linalg import solveh_banded
+lazy from scipy.spatial import cKDTree
 
 from .base import Animation, register_animation
 from .params import Param

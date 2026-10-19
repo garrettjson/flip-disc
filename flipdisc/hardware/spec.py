@@ -5,8 +5,6 @@ Intended to be imported by both low-level encoders and higher-level facades
 without creating circular imports.
 """
 
-from __future__ import annotations
-
 from enum import Enum
 from typing import NamedTuple
 
@@ -44,41 +42,43 @@ class ProtocolConfig(NamedTuple):
     description: str
 
 
-PROTOCOL_MAP: dict[tuple[DataBytes, Refresh], ProtocolConfig] = {
-    # 7x7 (7 data bytes): only instant
-    (DataBytes.BYTES_7, Refresh.INSTANT): ProtocolConfig(
-        command_byte=0x87,
-        data_bytes=7,
-        supports_buffered=False,
-        description="7x7 instant",
-    ),
-    # 14x7 (14 data bytes): instant and buffered
-    (DataBytes.BYTES_14, Refresh.INSTANT): ProtocolConfig(
-        command_byte=0x92,
-        data_bytes=14,
-        supports_buffered=True,
-        description="14x7 instant",
-    ),
-    (DataBytes.BYTES_14, Refresh.BUFFER): ProtocolConfig(
-        command_byte=0x93,
-        data_bytes=14,
-        supports_buffered=True,
-        description="14x7 buffered",
-    ),
-    # 28x7 (28 data bytes): instant and buffered
-    (DataBytes.BYTES_28, Refresh.INSTANT): ProtocolConfig(
-        command_byte=0x83,
-        data_bytes=28,
-        supports_buffered=True,
-        description="28x7 instant",
-    ),
-    (DataBytes.BYTES_28, Refresh.BUFFER): ProtocolConfig(
-        command_byte=0x84,
-        data_bytes=28,
-        supports_buffered=True,
-        description="28x7 buffered",
-    ),
-}
+PROTOCOL_MAP: frozendict[tuple[DataBytes, Refresh], ProtocolConfig] = frozendict(
+    {
+        # 7x7 (7 data bytes): only instant
+        (DataBytes.BYTES_7, Refresh.INSTANT): ProtocolConfig(
+            command_byte=0x87,
+            data_bytes=7,
+            supports_buffered=False,
+            description="7x7 instant",
+        ),
+        # 14x7 (14 data bytes): instant and buffered
+        (DataBytes.BYTES_14, Refresh.INSTANT): ProtocolConfig(
+            command_byte=0x92,
+            data_bytes=14,
+            supports_buffered=True,
+            description="14x7 instant",
+        ),
+        (DataBytes.BYTES_14, Refresh.BUFFER): ProtocolConfig(
+            command_byte=0x93,
+            data_bytes=14,
+            supports_buffered=True,
+            description="14x7 buffered",
+        ),
+        # 28x7 (28 data bytes): instant and buffered
+        (DataBytes.BYTES_28, Refresh.INSTANT): ProtocolConfig(
+            command_byte=0x83,
+            data_bytes=28,
+            supports_buffered=True,
+            description="28x7 instant",
+        ),
+        (DataBytes.BYTES_28, Refresh.BUFFER): ProtocolConfig(
+            command_byte=0x84,
+            data_bytes=28,
+            supports_buffered=True,
+            description="28x7 buffered",
+        ),
+    }
+)
 
 
 def get_protocol_config(data_bytes: DataBytes, refresh: Refresh) -> ProtocolConfig:

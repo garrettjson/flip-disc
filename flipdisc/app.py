@@ -7,8 +7,6 @@ with a lifespan that manages the pipeline. Uvicorn can import it by string
 reference ("flipdisc.app:create_asgi_app") and restart cleanly on file changes.
 """
 
-from __future__ import annotations
-
 import logging
 from contextlib import asynccontextmanager
 

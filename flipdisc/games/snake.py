@@ -5,8 +5,6 @@ direction is pressed; when the snake dies it flashes, then the score is shown
 until start is pressed.
 """
 
-from __future__ import annotations
-
 from collections import deque
 from enum import Enum, auto
 from typing import override
@@ -20,12 +18,14 @@ from flipdisc.fonts.loader import load_font
 
 from .base import Control, Game
 
-_DIRECTIONS = {
-    "up": (0, -1),
-    "down": (0, 1),
-    "left": (-1, 0),
-    "right": (1, 0),
-}
+_DIRECTIONS = frozendict(
+    {
+        "up": (0, -1),
+        "down": (0, 1),
+        "left": (-1, 0),
+        "right": (1, 0),
+    }
+)
 
 # Turns pressed faster than the snake moves wait their turn, so a quick
 # up-then-left squeezes round a corner. More than two would feel laggy.

@@ -4,7 +4,8 @@ import tomllib
 from pathlib import Path
 
 import numpy as np
-from skimage.io import imread
+
+from flipdisc.gfx.images import load_gray
 
 _FONTS_CONFIG = "assets/text/fonts.toml"
 
@@ -26,7 +27,7 @@ class BitmapFont:
         self.letter_height = letter_height
         self._glyphs: dict[str, np.ndarray] = {}
 
-        img = imread(str(Path(path)), as_gray=True).astype(np.float32)
+        img = load_gray(path)
 
         cell_w = letter_width + padding + margin
         cell_h = letter_height + padding + margin
@@ -159,7 +160,7 @@ class BitmapFont:
         return chunks
 
 
-def load_font(name: str, config_path: str = _FONTS_CONFIG) -> "BitmapFont":
+def load_font(name: str, config_path: str = _FONTS_CONFIG) -> BitmapFont:
     """Load a named font from the fonts TOML config.
 
     Args:

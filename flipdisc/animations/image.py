@@ -1,13 +1,11 @@
 """Static image animation — renders a single PNG frame on the display."""
 
-from __future__ import annotations
-
 from typing import override
 
 import numpy as np
-from skimage.io import imread
 
 from flipdisc.animations.clip import _blit_fit
+from flipdisc.gfx.images import load_gray
 
 from .base import Animation, register_animation
 from .params import Param
@@ -36,7 +34,7 @@ class ImageAnimation(Animation):
     @override
     def on_configure(self, **params) -> None:
         if params.get("src") is not None:
-            self._frame = imread(params["src"], as_gray=True).astype(np.float32)
+            self._frame = load_gray(params["src"])
 
     @override
     def step(self, dt: float) -> None:

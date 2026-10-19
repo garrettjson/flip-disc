@@ -14,7 +14,8 @@ Highlights
 ## Quick Start
 
 Requirements
-- Python 3.11+
+- Python 3.15 (uv installs it from `.python-version`)
+- On a Raspberry Pi, 64-bit Raspberry Pi OS: every dependency ships prebuilt 64-bit ARM wheels for 3.15. 32-bit is untested and would likely mean compiling numpy and scipy from source.
 - `uv`
 
 Install (dev) with uv:
