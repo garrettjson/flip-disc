@@ -19,6 +19,7 @@
 - **`processing_steps`** defaults to `("binarize",)`. Pass `None` when the output is already 1-bit or when layers handle their own processing (`ClipAnimation`, `ComposedAnimation`).
 - **Finite animations** set `self._completed = True` when done; `is_complete()` reports it.
 - Put `@override` on every overridden method.
+- **Too slow? Profile, then NumPy.** Most speedups come from replacing Python loops with whole-array NumPy operations (`gfx/noise.py` and `wireframe_cube`'s `_draw_line` are examples). On 28×28 frames, many tiny NumPy calls cost more than their arithmetic, so fewer, larger operations win. Numba isn't a dependency; see "Performance" under Design Intent in the root `CLAUDE.md` before reaching for it.
 - Import scipy (or another slow library only your animation needs) with `lazy from scipy.ndimage import convolve`, so server startup and other animations don't pay for it. Never make the import in `__init__.py` lazy: that's what registers the animation.
 
 ## Parameters

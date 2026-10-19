@@ -54,7 +54,14 @@ Goals stated by the owner; some are not yet true of the code. Ask before proposi
 Decisions the owner has made about the refactor (October 2026):
 
 - **Python for everything, for the time being.** A rewrite in another language was considered and set aside.
-- **Performance work comes last.** No Numba or other compiled kernels until the structural work is done, even though `simplex_noise` (~27 ms per frame) is too slow today. `fluid` costs about 3 ms on the dev machine (unmeasured on a Pi); every other animation costs under 3 ms.
+- **Performance: profile, then NumPy; Numba only when NumPy can't do it** (October 2026). Every animation now fits easily: `fluid` costs about 2.5 ms per frame on the dev machine (unmeasured on a Pi) and every other animation about 1 ms or less. `simplex_noise` went from 18 ms to 0.5 ms by replacing opensimplex (a per-pixel loop meant to be compiled by Numba) with NumPy simplex noise (`gfx/noise.py`), and `wireframe_cube` halved by drawing its brush in one NumPy operation.
+- **Numba is not a dependency; add it when a simulation needs it.** Tried October 2026. What we learned:
+  - **Wheels:** Numba has 3.15 wheels for the Pi, Apple Silicon Macs, Linux and Windows, but none for Intel Macs since 0.62.1. This marker installs it everywhere it can and skips Intel Macs: `"numba>=0.68; sys_platform != 'darwin' or platform_machine != 'x86_64'"`.
+  - **Compiling:** on the dev machine (Python 3.13), a 10-line function took 1.3 s to compile on first call; a cached one took 0.16 s to load in a fresh process. The Pi is slower, and every animation using it stalls when first started.
+  - **Untested paths:** where Numba isn't installed, the same functions run as plain Python, so tests there never exercise compiled behavior (no bounds checks, fixed-width integers).
+  - **Writing it:** NumPy-style code mostly doesn't compile as written, and loops written for Numba are slow without it: simplex noise as loops took 8.7 ms in plain Python vs 0.6 ms in NumPy vs 0.04 ms compiled.
+  - **Lock:** it caps numpy (`<2.6` for 0.68) for the whole lock.
+  - **Off switch:** `NUMBA_DISABLE_JIT=1` turns it off for one run.
 - **Free-threading is the first thing to consider if one animation needs more than one core; not adopted yet.** Tried October 2026 with uv's free-threaded 3.15 on the dev machine: all tests passed, the GIL stayed off with every dependency imported, single-threaded frame cost was unchanged, and every compiled dependency has free-threaded wheels for the Pi except watchfiles (needed only for `--reload`). Presenter timing showed no measurable gain, because no animation uses enough CPU for the GIL to matter. To switch: set `.python-version` to `3.15t`, and add a test that fails if `sys._is_gil_enabled()` is true, since a dependency without free-threading support silently turns the GIL back on.
 - **No JIT.** 3.15's JIT isn't in uv's builds, so using it means building and maintaining our own CPython on the Pi. It's still experimental, and it speeds up Python bytecode, not the numpy code where heavy animations spend their time.
 - **Animations declare their parameters** (type, default, range) so the API validates them and the web UI builds its controls from the schema. Built: see `flipdisc/animations/params.py`.
@@ -84,7 +91,7 @@ Before calling a change done: run the tests, run `ruff check` and `ruff format -
 - `flipdisc/animations/` — animation classes + decorator-based registry (see `flipdisc/animations/CLAUDE.md` for the authoring checklist)
 - `flipdisc/games/` — interactive games: `Game` (an `Animation` that takes input) and `Control`; games share the animation registry (see `flipdisc/games/CLAUDE.md`)
 - `flipdisc/hardware/` — RS-485 encoding (`spec` -> `formats` -> `protocol`), `panel_map` (canvas -> per-panel bits), `serial` (hardware + mock transports)
-- `flipdisc/gfx/` — `postprocessing` (binarize, dither, blur, sharpen, threshold, downsample), `terminal` (debug frame printing)
+- `flipdisc/gfx/` — `postprocessing` (binarize, dither, blur, sharpen, threshold, downsample), `images` (load a file as a grayscale frame), `noise` (3D simplex noise over a grid), `terminal` (debug frame printing)
 - `flipdisc/web/` — `api_server.py` (FastAPI routes + WebSocket preview + weather fetch loop), `index.html` + `static/` (web UI)
 - `flipdisc/services/` — `weather.py` (Open-Meteo fetch via httpx), `moon_phase.py`
 - `flipdisc/fonts/`, `flipdisc/clips/` — bitmap font loader; GIF clip loader + importer

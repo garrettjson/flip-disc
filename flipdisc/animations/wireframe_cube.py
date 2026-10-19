@@ -77,17 +77,15 @@ def _draw_line(
     px = np.round(x0 + i * xs).astype(int)
     py = np.round(y0 + i * ys).astype(int)
 
-    if thickness <= 1:
-        valid = (px >= 0) & (px < w) & (py >= 0) & (py < h)
-        frame[py[valid], px[valid]] = 1.0
-    else:
-        half = thickness // 2
-        for ox in range(-half, -half + thickness):
-            for oy in range(-half, -half + thickness):
-                qx = px + ox
-                qy = py + oy
-                valid = (qx >= 0) & (qx < w) & (qy >= 0) & (qy < h)
-                frame[qy[valid], qx[valid]] = 1.0
+    # Every point of the line offset by every cell of the brush, in one go.
+    # Points just off the frame still paint their neighbors inside it.
+    size = max(thickness, 1)
+    offsets = np.arange(size) - size // 2
+    ox, oy = np.meshgrid(offsets, offsets)
+    qx = (px[:, None] + ox.ravel()).ravel()
+    qy = (py[:, None] + oy.ravel()).ravel()
+    valid = (qx >= 0) & (qx < w) & (qy >= 0) & (qy < h)
+    frame[qy[valid], qx[valid]] = 1.0
 
 
 @register_animation("wireframe_cube")
