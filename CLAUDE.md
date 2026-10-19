@@ -123,7 +123,7 @@ All async except `get_status()`, `get_last_frame_bits()`, `set_preview_callback(
 
 ## Animations
 
-Registered names: `bouncing_dot`, `clip`, `clock`, `composed`, `fluid`, `image`, `life`, `pendulum`, `rain_splash`, `simplex_noise`, `text`, `weather`, `wireframe_cube`.
+Registered names: `bouncing_dot`, `clip`, `clock`, `composed`, `fluid`, `image`, `life`, `pendulum`, `rain_splash`, `sandpile`, `simplex_noise`, `text`, `weather`, `wireframe_cube`.
 
 Unregistered building blocks: `SupersampledAnimation` (render at N× and block-average for anti-aliasing), `AnalogClockAnimation` (used by `clock` with `style="analog"`), `WeatherIconAnimation` + `precipitation.py` effects (used by `weather`).
 
