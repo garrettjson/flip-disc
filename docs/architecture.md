@@ -119,6 +119,7 @@ All three request kinds go onto one `queue.SimpleQueue` and are applied in order
 - **One preview client at a time.** Registering a callback replaces the previous one, and a disconnecting client clears it, which also stops the preview for any other connected client.
 - The preview shows `_last_frame`, i.e. the last frame *written to serial*, so it mirrors what the panels were told to show.
 - The UI (`web/index.html`, `web/static/app.js`) is static files with no build step. `GET /animations` returns the animation names and, under `params`, each one's parameter schema; the UI builds its form from that (number inputs with min/max/step, checkboxes, selects for `choices`) and shows the server's message when a value is rejected. Changing a control sends just that one parameter to `POST /animations/configure`. The only hard-coded fields are latitude and longitude for the weather fetch loop, which configure the server's data source and are not animation parameters.
+- The preview canvas draws each dot as a disc. A dot that changes animates a half-turn about its horizontal axis (`DISC` in `app.js`; the ~60 ms flip time is a visual guess, not measured on the panels). The animation is cosmetic and client-side only: the frames, and what is sent to serial, are unchanged.
 
 ## 6. Animations
 

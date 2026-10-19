@@ -49,25 +49,125 @@ const paramErrorEl = document.getElementById('param-error');
 const currentAnimEl = document.getElementById('current-anim');
 const lastErrorEl = document.getElementById('last-error');
 
-function drawBits(bits, width, height) {
-  if (!bits || bits.length === 0) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    return;
+// Preview drawn as a board of discs. A disc that changes turns half a revolution
+// about its horizontal axis, so mid-flip it shows as a thin ellipse. Its angle runs
+// from 0 (dark side up) to PI (lit side up). The flip time is a visual guess, not a
+// measured property of the panels.
+const DISC = {
+  flipMs: 60,       // average half-turn; each disc gets its own speed within ±25%
+  radius: 0.43,     // fraction of the dot pitch
+  board: '#262626',
+  socket: '#080808', // the hole behind a disc, visible while it is edge-on
+  dark: [14, 14, 14],
+  lit: [242, 242, 238],
+};
+
+const board = { width: 0, height: 0, angle: null, target: null, speed: null, animating: false, lastTick: 0 };
+
+function sizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const cssWidth = canvas.clientWidth || 280;
+  canvas.width = Math.round(cssWidth * dpr);
+  canvas.height = Math.round(cssWidth * dpr * board.height / board.width);
+}
+
+function resetBoard(bits, width, height) {
+  const n = width * height;
+  board.width = width;
+  board.height = height;
+  board.angle = new Float32Array(n);
+  board.target = new Uint8Array(n);
+  board.speed = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    board.speed[i] = Math.PI / (DISC.flipMs * (0.75 + 0.5 * Math.random()));
   }
-  const scaleX = canvas.width / width;
-  const scaleY = canvas.height / height;
-  ctx.fillStyle = 'black';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = 'white';
-  for (let y = 0; y < height; y++) {
+  readTargets(bits);
+  // The first frame appears as-is rather than flipping in from dark
+  for (let i = 0; i < n; i++) board.angle[i] = board.target[i] * Math.PI;
+  sizeCanvas();
+  drawBoard();
+}
+
+function readTargets(bits) {
+  for (let y = 0; y < board.height; y++) {
     const row = bits[y];
-    for (let x = 0; x < width; x++) {
-      if (row[x]) {
-        ctx.fillRect(Math.floor(x * scaleX), Math.floor(y * scaleY), Math.ceil(scaleX), Math.ceil(scaleY));
+    for (let x = 0; x < board.width; x++) board.target[y * board.width + x] = row[x] ? 1 : 0;
+  }
+}
+
+function shade(rgb, k) {
+  return `rgb(${rgb[0] * k | 0},${rgb[1] * k | 0},${rgb[2] * k | 0})`;
+}
+
+function drawBoard() {
+  const pitch = canvas.width / board.width;
+  const r = pitch * DISC.radius;
+  ctx.fillStyle = DISC.board;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (let y = 0; y < board.height; y++) {
+    const cy = (y + 0.5) * pitch;
+    for (let x = 0; x < board.width; x++) {
+      const cx = (x + 0.5) * pitch;
+      const a = board.angle[y * board.width + x];
+      const tilt = Math.abs(Math.cos(a));
+      if (tilt < 1) {
+        ctx.fillStyle = DISC.socket;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+        ctx.fill();
       }
+      // A tilted disc catches less light
+      ctx.fillStyle = shade(a > Math.PI / 2 ? DISC.lit : DISC.dark, 0.5 + 0.5 * tilt);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, r, Math.max(r * tilt, 0.6), 0, 0, 2 * Math.PI);
+      ctx.fill();
     }
   }
 }
+
+function tick(now) {
+  const dt = Math.min(now - board.lastTick, 50);
+  board.lastTick = now;
+  let moving = false;
+  for (let i = 0; i < board.angle.length; i++) {
+    const goal = board.target[i] * Math.PI;
+    const a = board.angle[i];
+    if (a === goal) continue;
+    // A disc reversed mid-flip turns back from wherever it is
+    const step = board.speed[i] * dt;
+    board.angle[i] = goal > a ? Math.min(goal, a + step) : Math.max(goal, a - step);
+    if (board.angle[i] !== goal) moving = true;
+  }
+  drawBoard();
+  if (moving) {
+    requestAnimationFrame(tick);
+  } else {
+    board.animating = false;
+  }
+}
+
+function drawBits(bits, width, height) {
+  if (!bits || bits.length === 0) {
+    board.width = 0;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+  if (width !== board.width || height !== board.height) {
+    resetBoard(bits, width, height);
+    return;
+  }
+  readTargets(bits);
+  if (board.animating) return;
+  board.animating = true;
+  board.lastTick = performance.now();
+  requestAnimationFrame(tick);
+}
+
+window.addEventListener('resize', () => {
+  if (!board.width) return;
+  sizeCanvas();
+  drawBoard();
+});
 
 async function loadAnimations() {
   const data = await fetchJSON('/animations');

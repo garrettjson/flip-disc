@@ -53,10 +53,9 @@ body {
 .button:disabled { background: #444; cursor: not-allowed; }
 
 .preview-canvas {
-  background: #000;
+  background: #262626;
   border: 2px solid #404040;
   border-radius: 4px;
-  image-rendering: pixelated;
   width: 100%;
   height: auto;
 }
