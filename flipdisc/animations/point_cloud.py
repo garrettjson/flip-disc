@@ -106,7 +106,7 @@ class PointCloud(Animation):
     )
 
     def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=("binarize",))
+        super().__init__(width, height, processing_steps=None)
         self._spin_rate = 0.0
         self._spin_angle = 0.0
         self._wobble_angle = 0.0
