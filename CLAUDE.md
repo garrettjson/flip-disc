@@ -137,7 +137,7 @@ All async except `get_status()`, `get_last_frame_bits()`, `set_preview_callback(
 
 ## Animations
 
-Registered names: `bouncing_dot`, `clip`, `clock`, `composed`, `fluid`, `image`, `life`, `pendulum`, `rain_splash`, `sandpile`, `simplex_noise`, `text`, `weather`, `wireframe_cube`.
+Registered names: `bouncing_balls`, `bouncing_dot`, `clip`, `clock`, `composed`, `fluid`, `image`, `life`, `pendulum`, `rain_splash`, `sandpile`, `simplex_noise`, `text`, `weather`, `wireframe_cube`.
 
 Games (`flipdisc/games/`, listed separately by `GET /animations`): `snake`, `tetris`.
 
