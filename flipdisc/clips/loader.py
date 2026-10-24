@@ -22,6 +22,11 @@ class ClipData:
     width: int
     height: int
     description: str
+    # How a clip larger than the display is shrunk to fit it: frames averaged
+    # together (odd; 1 = none), and the share of each frame lit (None = cells
+    # more than half covered). See ClipAnimation's "fit" mode.
+    smoothing: int = 1
+    coverage: float | None = None
 
 
 def _load_gif(path: str, fps_override: float | None = None) -> tuple[np.ndarray, float]:
@@ -81,6 +86,8 @@ def load_clip(name: str, config_path: str = _CLIPS_CONFIG) -> ClipData:
         width=int(entry.get("width", frames.shape[2])),
         height=int(entry.get("height", frames.shape[1])),
         description=str(entry.get("description", "")),
+        smoothing=int(entry.get("smoothing", 1)),
+        coverage=float(entry["coverage"]) if "coverage" in entry else None,
     )
 
     _clip_cache[cache_key] = clip

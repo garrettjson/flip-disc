@@ -99,7 +99,7 @@ Before calling a change done: run the tests, run `ruff check` and `ruff format -
 - `flipdisc/app.py`, `flipdisc/cli.py` — wiring and `run-server` / `preview` subcommands
 - `flipdisc/exceptions.py` — `FlipDiscError` hierarchy
 - `flipdisc/tests/` — pytest tests
-- `assets/text/` — font sprite sheets + `fonts.toml`; `assets/images/weather/` — weather icon BMPs; `assets/clips/clips.toml` — clip manifest (currently empty)
+- `assets/text/` — font sprite sheets + `fonts.toml`; `assets/images/weather/` — weather icon BMPs; `assets/clips/` — clip GIFs + `clips.toml` manifest
 
 ### Pipeline
 
@@ -137,7 +137,7 @@ All async except `get_status()`, `get_last_frame_bits()`, `set_preview_callback(
 
 ## Animations
 
-Registered names: `bouncing_balls`, `bouncing_dot`, `clip`, `clock`, `composed`, `fluid`, `image`, `life`, `pendulum`, `point_cloud`, `rain_splash`, `rip`, `sandpile`, `simplex_noise`, `sort`, `text`, `weather`, `wireframe_cube`.
+Registered names: `black_hole`, `bouncing_balls`, `bouncing_dot`, `clip`, `clock`, `composed`, `fluid`, `image`, `life`, `pendulum`, `point_cloud`, `rain_splash`, `rip`, `sandpile`, `simplex_noise`, `sort`, `text`, `weather`, `wireframe_cube`.
 
 Games (`flipdisc/games/`, listed separately by `GET /animations`): `snake`, `tetris`.
 
@@ -190,7 +190,7 @@ Verified behaviors that are easy to trip over. Delete an entry when you fix it.
 - **Live `configure` lags by up to `buffer_duration` (1 s).** The generator computes ahead to fill the frame buffer, so a parameter change only shows once the frames already queued have played out. Switching animations is immediate (it drains the buffer). Games don't buffer, so for them it shows on the next tick.
 - **Whole-step speeds are snapped to the frame rate.** `Cadence` rounds a requested rate to a whole number of frames per step, so at 20 fps the achievable pixel speeds are 20, 10, 6.67, 5, 4, … px/s (or 40, 60, … above one pixel per frame). A requested 13 px/s plays at 10. This is deliberate; see `flipdisc/animations/CLAUDE.md`, "Motion".
 - **A slow animation plays in slow motion.** Each produced frame advances the animation by exactly one display interval, so if frames take longer than that to compute, the display falls behind real time instead of skipping.
-- **Clips are GIFs** listed in `assets/clips/clips.toml` (create with `flipdisc/clips/importer.py`). Some docstrings still say `.npz`. No clips are checked in.
+- **Clips are GIFs** listed in `assets/clips/clips.toml` (create with `flipdisc/clips/importer.py`). A clip larger than the display is shrunk to fit it (`fit_mode="fit"`, the default), using the `smoothing` and `coverage` keys of its `clips.toml` entry; store clips at a multiple of the display size so they play well on bigger grids too. The GIFs are gitignored (`assets/clips/*.gif`) and stored outside the repo; the manifest lists `face` (112×112) and `storm` (224×224), both 24 fps loops (`POST /anim/clip {"name": "face"}`); at 20 fps a 24 fps clip skips every sixth frame.
 - **`[weather]` in `config.toml` is not parsed.** The fetch loop only starts via `POST /weather/config` (the web UI does this when you start `weather`).
 - **`GET /images`** globs `assets/images/*.png`; the only images are `assets/images/weather/*.bmp`, so it returns `[]`.
 - **`TextAnimation` fails silently in static mode** when text doesn't fit: `_text_image` is `None`, `_error` holds the reason, and the frame is blank.

@@ -113,7 +113,7 @@ flip-disc/
 ├─ assets/
 │  ├─ text/                   # Bitmap font sprite sheets + fonts.toml
 │  ├─ images/weather/         # Weather icon BMPs
-│  └─ clips/clips.toml        # Clip manifest (GIF frame sequences)
+│  └─ clips/                  # Clip GIFs + clips.toml manifest
 └─ flipdisc/
    ├─ app.py                  # Application orchestrator (wires pipeline + API)
    ├─ cli.py                  # CLI: run-server, preview
@@ -127,7 +127,7 @@ flip-disc/
    │  ├─ text.py, clock.py, analog_clock.py
    │  ├─ weather.py, weather_icon.py, precipitation.py
    │  ├─ clip.py, image.py
-   │  ├─ bouncing_balls.py, bouncing_dot.py, fluid.py, life.py,
+   │  ├─ black_hole.py, bouncing_balls.py, bouncing_dot.py, fluid.py, life.py,
    │  │  pendulum.py, point_cloud.py, rain_splash.py, rip.py,
    │  │  sandpile.py, simplex_noise.py, wireframe_cube.py
    │  ├─ poisson.py           # Pressure solver for fluid (multigrid CG)
@@ -217,3 +217,8 @@ Tips
 - POST `/serial/reconnect`
 - GET/POST `/weather/config`, POST `/weather/refresh` -> background weather fetch for the `weather` animation
 - WS `/ws/preview` -> live frames; GET `/ui` -> web UI
+
+
+## Credits
+
+- `black_hole` is inspired by [Yudho](https://yudho.xyz).

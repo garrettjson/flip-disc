@@ -6,6 +6,7 @@ from flipdisc import games  # noqa: F401
 
 # Import all animations to register them
 from . import (
+    black_hole,
     bouncing_balls,
     bouncing_dot,
     clip,
@@ -44,6 +45,7 @@ __all__ = [
     "Param",
     "SupersampledAnimation",
     "animation_schemas",
+    "black_hole",
     "bouncing_balls",
     "bouncing_dot",
     "clip",

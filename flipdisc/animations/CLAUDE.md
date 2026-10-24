@@ -7,7 +7,8 @@
    A family of animations sharing most of their code can be a subpackage instead (`sorting/`): import the subpackage here, and have its `__init__.py` import its modules.
 3. Add `flipdisc/tests/test_<name>.py`. `test_fluid.py` is a good small template: construct, step, assert shape/dtype/value range, check `configure` and `reset`.
 4. Declare its parameters in `PARAMS` (see "Parameters" below). The API validation and the web UI's controls come from that declaration; there is nothing to add in `app.js`.
-5. Look at real frames before calling it done: `uv run python -m flipdisc preview -a <name> -n 5`, or `print_animation_frames` for non-default params.
+5. If it's based on someone else's work, credit them (name and link) at the top of the module docstring and in the README's Credits section (`black_hole.py` is an example; for a clip, in its `clips.toml` entry).
+6. Look at real frames before calling it done: `uv run python -m flipdisc preview -a <name> -n 5`, or `print_animation_frames` for non-default params.
 
 ## Rules of the road
 

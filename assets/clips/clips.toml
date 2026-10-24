@@ -8,3 +8,26 @@
 # description = "28x28 rain animation"
 # width       = 28
 # height      = 28
+#
+# A clip larger than the display is shrunk to fit it. By default a cell is lit
+# when more than half of it was; for sparse content (particles) set:
+# smoothing   = 5      # average this many frames (odd), to steady the result
+# coverage    = 0.25   # light the densest 25% of each frame instead
+
+# After Yudho (https://yudho.xyz)
+[face]
+path = "assets/clips/face.gif"
+fps = 24
+loop = true
+smoothing = 7
+coverage = 0.25
+description = "Particle face"
+
+# After Yudho (https://yudho.xyz)
+[storm]
+path = "assets/clips/storm.gif"
+fps = 24
+loop = true
+smoothing = 3
+coverage = 0.18
+description = "Cloaked figure in wind-blown rain"

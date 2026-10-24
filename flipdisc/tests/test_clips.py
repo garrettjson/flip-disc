@@ -110,6 +110,22 @@ def test_list_clips(tmp_path):
     assert list_clips(str(toml_path)) == ["alpha", "beta"]
 
 
+@pytest.mark.parametrize("name", list_clips())
+def test_manifest_clips_play_on_the_display(name):
+    try:
+        clip = load_clip(name)
+    except FileNotFoundError:
+        pytest.skip(
+            f"{name}: clip GIFs are stored outside the repo, and this one isn't here"
+        )
+    assert len(clip.frames) > 1
+    assert clip.fps > 0
+    anim = ClipAnimation(28, 28)
+    anim.configure(name=name)
+    assert anim._frames.shape[1:] == (28, 28)
+    assert anim.render_gray().any()
+
+
 # ---------------------------------------------------------------------------
 # Importer round-trip test
 # ---------------------------------------------------------------------------
@@ -264,6 +280,76 @@ def test_clip_animation_reset(monkeypatch):
 def test_clip_animation_processing_steps_none():
     anim = ClipAnimation(56, 7)
     assert anim.processing_steps is None
+
+
+def _big_clip(**kw) -> ClipData:
+    """An 8x8 clip whose top-left 4x4 quarter is 3/4 lit, the rest empty."""
+    frames = np.zeros((4, 8, 8), dtype=bool)
+    frames[:, :4, :4] = True
+    frames[:, 0, :4] = False
+    return ClipData(
+        frames=frames, fps=20.0, loop=True, width=8, height=8, description="", **kw
+    )
+
+
+def test_fit_shrinks_a_larger_clip(monkeypatch):
+    monkeypatch.setattr(
+        "flipdisc.animations.clip.load_clip", _mock_load_clip(_big_clip())
+    )
+    anim = ClipAnimation(2, 2)
+    anim.configure(name="test")
+    # Cells more than half lit
+    np.testing.assert_array_equal(anim.render_gray(), [[1, 0], [0, 0]])
+
+
+def test_fit_keeps_aspect_and_centres(monkeypatch):
+    monkeypatch.setattr(
+        "flipdisc.animations.clip.load_clip", _mock_load_clip(_big_clip())
+    )
+    anim = ClipAnimation(6, 2)
+    anim.configure(name="test")
+    expected = np.zeros((2, 6))
+    expected[0, 2] = 1
+    np.testing.assert_array_equal(anim.render_gray(), expected)
+
+
+def test_fit_coverage_lights_the_densest_share(monkeypatch):
+    clip = _big_clip(coverage=0.5)
+    clip.frames[:, 4:, 4:6] = True  # bottom-right quarter half lit
+    monkeypatch.setattr("flipdisc.animations.clip.load_clip", _mock_load_clip(clip))
+    anim = ClipAnimation(2, 2)
+    anim.configure(name="test")
+    np.testing.assert_array_equal(anim.render_gray(), [[1, 0], [0, 1]])
+
+
+def test_fit_smoothing_averages_frames(monkeypatch):
+    clip = _big_clip(smoothing=3)
+    clip.frames[1:] = False  # lit in one frame of four
+    monkeypatch.setattr("flipdisc.animations.clip.load_clip", _mock_load_clip(clip))
+    anim = ClipAnimation(2, 2)
+    anim.configure(name="test")
+    # A quarter of a 3/4-lit cell, averaged over three frames, never passes half
+    assert not anim._frames.any()
+
+
+def test_fit_leaves_a_clip_that_fits_alone(monkeypatch):
+    clip = _big_clip()
+    monkeypatch.setattr("flipdisc.animations.clip.load_clip", _mock_load_clip(clip))
+    anim = ClipAnimation(8, 8)
+    anim.configure(name="test")
+    assert anim._frames is clip.frames
+
+
+def test_other_fit_modes_play_at_clip_resolution(monkeypatch):
+    clip = _big_clip()
+    monkeypatch.setattr("flipdisc.animations.clip.load_clip", _mock_load_clip(clip))
+    anim = ClipAnimation(2, 2)
+    anim.configure(name="test", fit_mode="center")
+    assert anim._frames is clip.frames
+    # Switching clips keeps the chosen mode
+    anim.configure(name="test")
+    assert anim.params["fit_mode"] == "center"
+    assert anim._frames is clip.frames
 
 
 # ---------------------------------------------------------------------------
