@@ -127,8 +127,10 @@ flip-disc/
    │  ├─ text.py, clock.py, analog_clock.py
    │  ├─ weather.py, weather_icon.py, precipitation.py
    │  ├─ clip.py, image.py
-   │  └─ bouncing_dot.py, life.py, pendulum.py, simplex_noise.py,
-   │     wireframe_cube.py, fluid.py, point_cloud.py
+   │  ├─ bouncing_balls.py, bouncing_dot.py, fluid.py, life.py,
+   │  │  pendulum.py, point_cloud.py, rain_splash.py, rip.py,
+   │  │  sandpile.py, simplex_noise.py, wireframe_cube.py
+   │  └─ sorting/             # `sort`: one module per algorithm
    ├─ fonts/loader.py         # BitmapFont class + load_font(name)
    ├─ clips/                  # GIF clip loader + importer utilities
    ├─ services/               # Weather fetch (Open-Meteo), moon phase
