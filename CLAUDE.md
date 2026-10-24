@@ -88,7 +88,7 @@ Before calling a change done: run the tests, run `ruff check` and `ruff format -
 ## Architecture
 
 - `flipdisc/engine/pipeline.py` — `DisplayPipeline`: generator thread + async presenter, connected by `queue.Queue`
-- `flipdisc/animations/` — animation classes + decorator-based registry (see `flipdisc/animations/CLAUDE.md` for the authoring checklist)
+- `flipdisc/animations/` — animation classes + decorator-based registry (see `flipdisc/animations/CLAUDE.md` for the authoring checklist); `sorting/` holds the `sort` animation and one module per algorithm
 - `flipdisc/games/` — interactive games: `Game` (an `Animation` that takes input) and `Control`; games share the animation registry (see `flipdisc/games/CLAUDE.md`)
 - `flipdisc/hardware/` — RS-485 encoding (`spec` -> `formats` -> `protocol`), `panel_map` (canvas -> per-panel bits), `serial` (hardware + mock transports)
 - `flipdisc/gfx/` — `postprocessing` (binarize, dither, blur, sharpen, threshold, downsample), `images` (load a file as a grayscale frame), `noise` (3D simplex noise over a grid), `terminal` (debug frame printing)
@@ -137,7 +137,7 @@ All async except `get_status()`, `get_last_frame_bits()`, `set_preview_callback(
 
 ## Animations
 
-Registered names: `bouncing_balls`, `bouncing_dot`, `clip`, `clock`, `composed`, `fluid`, `image`, `life`, `pendulum`, `rain_splash`, `rip`, `sandpile`, `simplex_noise`, `text`, `weather`, `wireframe_cube`.
+Registered names: `bouncing_balls`, `bouncing_dot`, `clip`, `clock`, `composed`, `fluid`, `image`, `life`, `pendulum`, `rain_splash`, `rip`, `sandpile`, `simplex_noise`, `sort`, `text`, `weather`, `wireframe_cube`.
 
 Games (`flipdisc/games/`, listed separately by `GET /animations`): `snake`, `tetris`.
 

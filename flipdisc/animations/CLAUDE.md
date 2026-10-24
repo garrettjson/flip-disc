@@ -4,6 +4,7 @@
 
 1. Create `flipdisc/animations/<name>.py`. Subclass `Animation` (or `SupersampledAnimation` for anti-aliased vector-style drawing, or `ComposedAnimation` for layered layouts) and decorate with `@register_animation("<name>")`.
 2. **Import the module in `flipdisc/animations/__init__.py`** (both the import tuple and `__all__`). Registration happens at import time; without this the animation doesn't exist.
+   A family of animations sharing most of their code can be a subpackage instead (`sorting/`): import the subpackage here, and have its `__init__.py` import its modules.
 3. Add `flipdisc/tests/test_<name>.py`. `test_fluid.py` is a good small template: construct, step, assert shape/dtype/value range, check `configure` and `reset`.
 4. Declare its parameters in `PARAMS` (see "Parameters" below). The API validation and the web UI's controls come from that declaration; there is nothing to add in `app.js`.
 5. Look at real frames before calling it done: `uv run python -m flipdisc preview -a <name> -n 5`, or `print_animation_frames` for non-default params.
@@ -70,6 +71,10 @@ Every dot that flips is seen and heard, so the *rhythm* of motion matters as muc
 - **Continuous motion** — values that are rasterized rather than stepped: rotation angles, physics positions, noise time. Scale by `dt` directly (`self.angle += self.rotation_speed * dt`). For physics that needs small steps, substep internally with a fixed substep size (see `fluid.py`).
 
 Wall-clock content (`clock`) reads the system time and needs neither.
+
+## Sorting algorithms
+
+`sort` (`sorting/base.py`) plays any algorithm registered with `@sort_algorithm("<name>")`, which becomes an `algorithm` choice. To add one, write a generator in `sorting/<name>.py` that sorts the list it's given in place and yields a tuple of the indices to highlight after every operation (one comparison, with the swap or write it leads to), then import it in `sorting/__init__.py`. `bubble.py` is the template. `test_sort.py` checks every registered algorithm sorts and yields valid indices.
 
 ## Layering
 
