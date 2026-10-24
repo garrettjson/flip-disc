@@ -11,12 +11,21 @@ Each grain lives for ``lifespan`` seconds (±25%) and then vanishes where it
 is; the grains above it drop into the gap, so the pile reaches a steady size
 and slowly churns instead of filling the display.
 
-The spout stays at the top and sweeps from side to side on a sine wave
-around ``pour_position``, laying down a moving ridge of piles.
+The spout stays at the top and moves around ``pour_position`` according to
+``movement``:
+
+- ``static`` holds it at ``pour_position``, building a single cone.
+- ``sweep`` swings it from side to side on a sine wave, laying down a moving
+  ridge of piles.
+- ``random`` glides it to one randomly chosen point after another.
+- ``gaussian`` swings it from side to side so that the time it spends at each
+  point follows a normal distribution: slow through the middle, fast near the
+  edges, so the pile builds up in the centre and thins out to either side.
 """
 
 import math
 from dataclasses import dataclass
+from statistics import NormalDist
 from typing import override
 
 import numpy as np
@@ -49,6 +58,15 @@ _SPOUT_SPEED = 5.0  # px/s
 # display width (clipped at the edges)
 _SWEEP_AMPLITUDE = 0.4
 
+_MOVEMENTS = ("static", "sweep", "random", "gaussian")
+
+# In gaussian movement, the sweep's edges are this many standard deviations
+# from its centre. At 2 the spout dwells in the middle and passes the edges
+# about 7 times faster (e²).
+_GAUSSIAN_EDGE_SIGMAS = 2.0
+_NORMAL = NormalDist()
+_GAUSSIAN_EDGE_CDF = _NORMAL.cdf(_GAUSSIAN_EDGE_SIGMAS)
+
 
 @dataclass(slots=True)
 class _FallingGrain:
@@ -67,7 +85,9 @@ class Sandpile(Animation):
         Param("gravity", float, 10.0, min=5, max=500, step=5, unit="px/s²"),
         Param("lifespan", float, 50.0, min=1, max=600, step=1, unit="s"),
         Param("pour_position", float, 0.5, min=0, max=1, step=0.05),
-        # Full side-to-side cycles per second; 0 holds the spout still
+        Param("movement", str, "sweep", choices=_MOVEMENTS),
+        # Full side-to-side cycles per second; 0 holds the spout still. In
+        # random movement, the spout travels as far per second on average.
         Param("sweep_speed", float, 0.1, min=0, max=1, step=0.01, unit="Hz"),
     )
 
@@ -78,7 +98,10 @@ class Sandpile(Animation):
         self._falling: list[_FallingGrain] = []
         self._pour = Cadence()
         self._roll = Cadence()
-        self._sweep_phase = 0.0
+        self._sweep_phase = 0.0  # cycles
+        # Spout position relative to pour_position, as a fraction of the width
+        self._spout_offset = 0.0
+        self._random_target = 0.0
 
     @property
     def _repose_slope(self) -> float:
@@ -120,9 +143,41 @@ class Sandpile(Animation):
                 self._land(grain.x)
         self._falling = still_falling
 
+    def _move_spout(self, dt: float) -> None:
+        speed = self.params["sweep_speed"]
+        self._sweep_phase += speed * dt
+        match self.params["movement"]:
+            case "static":
+                self._spout_offset = 0.0
+            case "sweep":
+                wave = math.sin(2 * math.pi * self._sweep_phase)
+                self._spout_offset = _SWEEP_AMPLITUDE * wave
+            case "gaussian":
+                self._spout_offset = _SWEEP_AMPLITUDE * self._gaussian_wave()
+            case "random":
+                # A sweep covers four amplitudes per cycle
+                self._glide_to_random_targets(4 * _SWEEP_AMPLITUDE * speed * dt)
+
+    def _gaussian_wave(self) -> float:
+        """A wave in [-1, 1] with the sweep's phase, whose time spent at each
+        value follows a normal distribution truncated at the edges."""
+        # A triangle wave moves at a constant speed, so it dwells evenly; the
+        # inverse normal CDF stretches the middle and squeezes the tails
+        triangle = 4 * abs((self._sweep_phase - 0.25) % 1 - 0.5) - 1
+        probability = 0.5 + triangle * (_GAUSSIAN_EDGE_CDF - 0.5)
+        return _NORMAL.inv_cdf(probability) / _GAUSSIAN_EDGE_SIGMAS
+
+    def _glide_to_random_targets(self, distance: float) -> None:
+        to_go = self._random_target - self._spout_offset
+        if abs(to_go) > distance:
+            self._spout_offset += math.copysign(distance, to_go)
+            return
+        self._spout_offset = self._random_target
+        self._random_target = _SWEEP_AMPLITUDE * (2 * np.random.random() - 1)
+
     def _spout_x(self) -> int:
-        offset = _SWEEP_AMPLITUDE * math.sin(self._sweep_phase)
-        position = min(max(self.params["pour_position"] + offset, 0.0), 1.0)
+        position = self.params["pour_position"] + self._spout_offset
+        position = min(max(position, 0.0), 1.0)
         return round(position * (self.width - 1))
 
     def _pour_grains(self, dt: float) -> None:
@@ -183,7 +238,7 @@ class Sandpile(Animation):
         self.current_time += dt
         self._expire()
         self._fall(dt)
-        self._sweep_phase += 2 * math.pi * self.params["sweep_speed"] * dt
+        self._move_spout(dt)
         self._pour_grains(dt)
         # A grain tipping off a ledge falls one pixel in sqrt(2 / g) seconds;
         # rolling one column takes about that long
@@ -212,3 +267,5 @@ class Sandpile(Animation):
         self._pour.reset()
         self._roll.reset()
         self._sweep_phase = 0.0
+        self._spout_offset = 0.0
+        self._random_target = 0.0

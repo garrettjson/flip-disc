@@ -139,6 +139,60 @@ def test_no_sweep_holds_the_spout_still():
         assert anim._spout_x() == round(0.7 * 27)
 
 
+def test_static_movement_holds_the_spout_still():
+    anim = Sandpile(28, 28)
+    anim.configure(movement="static", sweep_speed=0.5, pour_position=0.3)
+    for _ in range(40):
+        anim.step(0.05)
+        assert anim._spout_x() == round(0.3 * 27)
+
+
+def _spout_path(movement: str, seconds: float) -> np.ndarray:
+    anim = Sandpile(28, 28)
+    anim.configure(movement=movement, sweep_speed=0.1)
+    path = []
+    for _ in range(round(seconds / 0.05)):
+        anim.step(0.05)
+        path.append(anim._spout_x())
+    return np.array(path)
+
+
+def test_gaussian_movement_dwells_in_the_middle():
+    gaussian, sweep = _spout_path("gaussian", 10), _spout_path("sweep", 10)
+    # Reaches the same edges as the sweep
+    assert gaussian.min() == sweep.min()
+    assert gaussian.max() == sweep.max()
+
+    def middle_share(path: np.ndarray) -> float:
+        return float(np.mean(abs(path - 13.5) < 4))
+
+    # Within 4 columns of the centre (0.37 of the sweep's amplitude), a normal
+    # distribution truncated at 2 standard deviations spends about 57% of its
+    # time; a sine wave 24%
+    assert middle_share(gaussian) > 0.45
+    assert middle_share(sweep) < 0.3
+    # It moves fastest at the edges
+    speed = abs(np.diff(gaussian))
+    near_edge = abs(gaussian[1:] - 13.5) > 8
+    assert speed[near_edge].mean() > 3 * speed[~near_edge].mean()
+
+
+def test_random_movement_wanders_smoothly_within_the_sweep():
+    np.random.seed(8)
+    path = _spout_path("random", 60)
+    # 0.5 ± 0.4 of the width
+    assert path.min() >= round(0.1 * 27)
+    assert path.max() <= round(0.9 * 27)
+    assert path.max() - path.min() > 12
+    # Glides rather than jumping: under one column per frame at 0.1 Hz
+    assert abs(np.diff(path)).max() <= 1
+    # Turns around at random points, not just at the edges
+    moves = np.sign(np.diff(path))
+    directions = moves[moves != 0]
+    turns = path[1:][moves != 0][:-1][directions[1:] != directions[:-1]]
+    assert len(set(turns.tolist())) >= 4
+
+
 def test_full_display_stops_accepting_grains():
     np.random.seed(6)
     anim = Sandpile(7, 7)
