@@ -135,13 +135,13 @@ Each animation declares its parameters as a `PARAMS` tuple of `Param` (`animatio
 
 Three families:
 
-Motion comes in two kinds (`flipdisc/animations/CLAUDE.md`, "Motion"): whole-step motion (text scroll, precipitation, `bouncing_dot`, `life` generations, `rain_splash` drops, `sandpile` pouring and rolling, `sort` operations) goes through `Cadence` (`animations/cadence.py`), which snaps the requested rate to an even number of frames per step; continuous motion (`wireframe_cube`, `pendulum`, `fluid`, `point_cloud`, `simplex_noise`, `bouncing_balls`, `rip`) scales by `dt`.
+Motion comes in two kinds (`flipdisc/animations/CLAUDE.md`, "Motion"): whole-step motion (text scroll, precipitation, `bouncing_dot`, `life` generations, `rain_splash` drops, `sandpile` pouring and rolling, `sort` operations) goes through `Cadence` (`animations/cadence.py`), which snaps the requested rate to an even number of frames per step; continuous motion (`wireframe_cube`, `pendulum`, `fluid`, `point_cloud`, `black_hole`, `simplex_noise`, `bouncing_balls`, `rip`) scales by `dt`.
 
-- **Direct** — subclass `Animation`, draw into a `(height, width)` float array: `bouncing_dot`, `life`, `pendulum`, `simplex_noise`, `text`, `clock`, `image`, `clip`, `fluid`, `point_cloud`, `bouncing_balls`, `rain_splash`, `rip`, `sandpile`, `sort`.
+- **Direct** — subclass `Animation`, draw into a `(height, width)` float array: `bouncing_dot`, `life`, `pendulum`, `simplex_noise`, `text`, `clock`, `image`, `clip`, `fluid`, `point_cloud`, `black_hole`, `bouncing_balls`, `rain_splash`, `rip`, `sandpile`, `sort`.
 - **Supersampled** — subclass `SupersampledAnimation`, draw at N× resolution in `render_hires()`; the base class block-averages down so edges binarize cleanly: `wireframe_cube`, and `AnalogClockAnimation` (used by `clock` when `style="analog"`).
 - **Composed** — `ComposedAnimation` holds a list of layers, each an independent animation with a position, blend mode, and visibility. On each render it runs every layer's own processing steps, then blits ("over" replaces, "add" is `np.maximum`). `weather` is the main example: a full-canvas `WeatherIconAnimation` (icon bitmap + precipitation particle effects from `precipitation.py`) plus a `TextAnimation` for the temperature, with the degree symbol drawn on top in an overridden `render_gray()`.
 
-Assets are found by **working-directory-relative paths** (`assets/text/fonts.toml`, `assets/clips/clips.toml`, `assets/images`), except the weather icons, which are resolved relative to the source file. Fonts are bitmap sprite sheets sliced by the parameters in `fonts.toml` (`fonts/loader.py`). Clips are GIFs decoded once and cached in memory (`clips/loader.py`).
+Assets are found by **working-directory-relative paths** (`assets/text/fonts.toml`, `assets/clips/clips.toml`, `assets/images`), except the weather icons, which are resolved relative to the source file. Fonts are bitmap sprite sheets sliced by the parameters in `fonts.toml` (`fonts/loader.py`). Clips are GIFs decoded once and cached in memory (`clips/loader.py`); `ClipAnimation` shrinks one larger than the display to fit it when it is configured, box-averaging each frame, optionally averaging over frames (`smoothing`), and lighting cells more than half covered or the densest `coverage` share of each frame.
 
 ## 7. Weather data flow
 
