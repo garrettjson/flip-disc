@@ -1,7 +1,5 @@
 """Terminal rendering utilities for inspecting animation frames during development."""
 
-from __future__ import annotations
-
 import numpy as np
 
 from flipdisc.gfx.postprocessing import apply_processing_pipeline

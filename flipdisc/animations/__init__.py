@@ -1,7 +1,12 @@
 """Animation module for flip-disc displays."""
 
+# Games live in flipdisc/games but share this registry; importing them here
+# registers them wherever animations are looked up.
+from flipdisc import games  # noqa: F401
+
 # Import all animations to register them
 from . import (
+    bouncing_balls,
     bouncing_dot,
     clip,
     clock,
@@ -10,7 +15,12 @@ from . import (
     image,
     life,
     pendulum,
+    point_cloud,
+    rain_splash,
+    rip,
+    sandpile,
     simplex_noise,
+    sorting,
     supersampled,
     text,
     weather,
@@ -34,6 +44,7 @@ __all__ = [
     "Param",
     "SupersampledAnimation",
     "animation_schemas",
+    "bouncing_balls",
     "bouncing_dot",
     "clip",
     "clock",
@@ -44,8 +55,13 @@ __all__ = [
     "life",
     "list_animations",
     "pendulum",
+    "point_cloud",
+    "rain_splash",
     "register_animation",
+    "rip",
+    "sandpile",
     "simplex_noise",
+    "sorting",
     "supersampled",
     "text",
     "validate_params",

@@ -29,6 +29,12 @@ class Animation(ABC):
 
     PARAMS: ClassVar[tuple[Param, ...]] = ()
 
+    # False: the pipeline computes frames up to buffer_duration ahead, which
+    # absorbs slow frames. True: it steps and renders one frame at each
+    # presenter tick, just before writing it, so input applied before the tick
+    # shows on that tick. Games use this; it suits anything cheap and live.
+    FRAMES_ON_DEMAND: ClassVar[bool] = False
+
     def __init__(
         self,
         width: int,

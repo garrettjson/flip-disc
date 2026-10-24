@@ -1,7 +1,5 @@
 """API server for control and status (FastAPI)."""
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import json
@@ -10,11 +8,11 @@ import tomllib
 from pathlib import Path
 from typing import Annotated
 
-import httpx
 import uvicorn
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+lazy import httpx
 
 from flipdisc.animations import animation_schemas
 from flipdisc.animations import list_animations as list_animation_names
@@ -28,6 +26,7 @@ from flipdisc.exceptions import (
     SerialConnectionError,
 )
 from flipdisc.fonts.loader import list_fonts as list_font_names
+from flipdisc.games import game_controls, list_games
 from flipdisc.services.weather import WeatherData, fetch_weather
 
 logger = logging.getLogger(__name__)
@@ -76,6 +75,7 @@ class ApiServer:
                     "playing": st.playing,
                     "frames_presented": st.frames_presented,
                     "buffer_capacity": st.buffer_capacity,
+                    "frames_on_demand": st.frames_on_demand,
                     "animation": st.animation,
                     "last_error": st.last_error,
                     "serial_connected": self.pipeline.serial.is_connected(),
@@ -89,10 +89,15 @@ class ApiServer:
 
         @self.app.get("/animations")
         async def list_animations_route():
+            games = list_games()
             return {
-                "animations": list_animation_names(),
-                # name -> list of parameter descriptions (see animations/params.py)
+                "animations": [n for n in list_animation_names() if n not in games],
+                "games": games,
+                # name -> list of parameter descriptions (see animations/params.py),
+                # for games too
                 "params": animation_schemas(),
+                # game name -> list of {action, label, keys} (see games/base.py)
+                "controls": game_controls(),
             }
 
         @self.app.get("/fonts")
@@ -172,6 +177,16 @@ class ApiServer:
             except FlipDiscError as e:
                 logger.error(f"Unexpected error starting animation: {e}")
                 raise HTTPException(500, f"Failed to start animation: {e}") from e
+
+        @self.app.post("/input")
+        async def send_input(
+            action: Annotated[str, Body()], pressed: Annotated[bool, Body()] = True
+        ):
+            try:
+                await self.pipeline.send_input(action, pressed)
+                return {"action": action, "pressed": pressed}
+            except AnimationError as e:
+                raise HTTPException(400, str(e)) from e
 
         @self.app.get("/fps")
         async def get_fps():
@@ -321,6 +336,21 @@ class ApiServer:
                     await receive_task
                 self.pipeline.set_preview_callback(None)
 
+        # Game input: {"action": "left", "pressed": true} per message. Invalid
+        # messages are answered with {"error": "..."}; valid ones get no reply.
+        @self.app.websocket("/ws/input")
+        async def input_websocket(websocket: WebSocket):
+            await websocket.accept()
+            try:
+                while True:
+                    error = await self._apply_input_message(
+                        await websocket.receive_text()
+                    )
+                    if error:
+                        await websocket.send_text(json.dumps({"error": error}))
+            except WebSocketDisconnect:
+                logger.debug("Input WebSocket client disconnected")
+
         # UI index
         @self.app.get("/ui")
         async def ui():
@@ -328,6 +358,22 @@ class ApiServer:
             if index_file.exists():
                 return HTMLResponse(index_file.read_text(encoding="utf-8"))
             raise HTTPException(404, "UI not available")
+
+    async def _apply_input_message(self, text: str) -> str | None:
+        """Send one input-socket message to the pipeline; return an error or None."""
+        try:
+            message = json.loads(text)
+            action = message["action"]
+            pressed = message.get("pressed", True)
+        except json.JSONDecodeError, KeyError, TypeError, AttributeError:
+            return 'expected {"action": str, "pressed": bool}'
+        if not isinstance(action, str) or not isinstance(pressed, bool):
+            return 'expected {"action": str, "pressed": bool}'
+        try:
+            await self.pipeline.send_input(action, pressed)
+        except AnimationError as e:
+            return str(e)
+        return None
 
     # ------------------------------------------------------------------
     # Weather background loop

@@ -3,7 +3,7 @@
 from typing import override
 
 import numpy as np
-from scipy.ndimage import convolve
+lazy from scipy.ndimage import convolve
 
 from .base import Animation, register_animation
 from .cadence import Cadence
@@ -19,12 +19,14 @@ _GLOW_KERNEL = np.array(
 
 
 # Named seed patterns: (dx, dy) offsets from the display center
-_PATTERNS: dict[str, list[tuple[int, int]]] = {
-    "glider": [(1, 0), (2, 1), (0, 2), (1, 2), (2, 2)],
-    "blinker": [(-1, 0), (0, 0), (1, 0)],
-    "block": [(0, 0), (0, 1), (1, 0), (1, 1)],
-    "beacon": [(0, 0), (0, 1), (1, 0), (2, 3), (3, 2), (3, 3)],
-}
+_PATTERNS: frozendict[str, list[tuple[int, int]]] = frozendict(
+    {
+        "glider": [(1, 0), (2, 1), (0, 2), (1, 2), (2, 2)],
+        "blinker": [(-1, 0), (0, 0), (1, 0)],
+        "block": [(0, 0), (0, 1), (1, 0), (1, 1)],
+        "beacon": [(0, 0), (0, 1), (1, 0), (2, 3), (3, 2), (3, 3)],
+    }
+)
 
 
 @register_animation("life")

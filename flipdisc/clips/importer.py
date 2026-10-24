@@ -3,17 +3,15 @@
 Not imported by the server — use from scripts or tests only.
 """
 
-from __future__ import annotations
-
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
 from PIL import Image
-from skimage.io import imread
 
-if TYPE_CHECKING:
-    from flipdisc.animations.base import Animation
+from flipdisc.gfx.images import load_gray
+
+# Only used in annotations, so never actually loaded
+lazy from flipdisc.animations.base import Animation
 
 
 def import_clip_from_png_sequence(
@@ -41,7 +39,7 @@ def import_clip_from_png_sequence(
 
     frames: list[np.ndarray] = []
     for p in png_paths:
-        img = imread(str(p), as_gray=True).astype(np.float32)
+        img = load_gray(p)
         frames.append(img > threshold)
 
     _save_gif(frames, output_path, fps)

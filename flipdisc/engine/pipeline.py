@@ -6,9 +6,11 @@ encodes them, writes to serial, and broadcasts preview frames.
 
 The small frame buffer (queue.Queue(maxsize=N)) smooths compute spikes in the
 generator so the presenter always has frames ready to display.
-"""
 
-from __future__ import annotations
+Animations with FRAMES_ON_DEMAND (games) skip the buffer: at each tick the
+presenter asks for a frame, and the generator applies pending input, steps
+once, and renders it right then, so input shows on the next tick.
+"""
 
 import asyncio
 import contextlib
@@ -24,6 +26,7 @@ import numpy as np
 from flipdisc.animations import Animation, get_animation, validate_params
 from flipdisc.config import DisplayConfig
 from flipdisc.exceptions import AnimationError, HardwareError, SerialConnectionError
+from flipdisc.games import Game, validate_input
 from flipdisc.gfx.postprocessing import apply_processing_pipeline
 from flipdisc.hardware.panel_map import split_canvas_bits_to_panels
 from flipdisc.hardware.protocol import ProtocolEncoder
@@ -40,6 +43,8 @@ class PipelineStatus:
     buffer_capacity: int
     animation: str | None = None
     last_error: str | None = None
+    # True while frames are made at each tick rather than buffered (games)
+    frames_on_demand: bool = False
 
 
 class DisplayPipeline:
@@ -60,7 +65,8 @@ class DisplayPipeline:
         self._play_event = threading.Event()
 
         # Control requests (main thread -> generator thread), applied in order.
-        # Each is a (kind, payload) pair; kind is "switch", "configure" or "reset".
+        # Each is a (kind, payload) pair; kind is "switch", "configure",
+        # "reset" or "input".
         self._requests: queue.SimpleQueue[tuple[str, Any]] = queue.SimpleQueue()
 
         # The animation most recently asked for; params are validated against
@@ -70,6 +76,15 @@ class DisplayPipeline:
         # Written by the generator thread, read by get_status()
         self._current_animation: str | None = None
         self._last_error: tuple[str, str] | None = None
+
+        # On-demand frames: set by the generator when it switches to an
+        # animation with FRAMES_ON_DEMAND. The presenter then sets
+        # _frame_wanted at each tick and waits for _frame_ready instead of
+        # taking whatever is buffered.
+        self._on_demand = False
+        self._frame_wanted = threading.Event()
+        self._frame_ready: asyncio.Event | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
         # Generator thread
         self._gen_thread: threading.Thread | None = None
@@ -147,6 +162,8 @@ class DisplayPipeline:
             # Only drop queued frames once the replacement is known to work
             self._drain_queue()
             self._current_animation = name
+            self._on_demand = new_anim.FRAMES_ON_DEMAND
+            self._frame_wanted.clear()
             return new_anim
 
         if anim is None:
@@ -155,6 +172,11 @@ class DisplayPipeline:
             anim.configure(**payload)
         elif kind == "reset":
             anim.reset()
+        elif kind == "input":
+            if not isinstance(anim, Game):
+                raise AnimationError(f"{self._current_animation} takes no input")
+            action, pressed = payload
+            anim.handle_input(action, pressed)
         return anim
 
     def _process_requests(self, anim: Animation | None) -> Animation | None:
@@ -196,6 +218,17 @@ class DisplayPipeline:
                     self._stop_event.wait(timeout=0.05)
                     continue
 
+                if self._on_demand:
+                    # Wait for the presenter's tick, waking now and then to
+                    # apply other requests (a switch away, a configure)
+                    if not self._frame_wanted.wait(timeout=0.05):
+                        continue
+                    self._frame_wanted.clear()
+                    # Input that arrived while waiting goes into this frame
+                    anim = self._process_requests(anim)
+                    if anim is None:
+                        continue
+
                 try:
                     # One frame of animation per frame of display time
                     anim.step(self.frame_interval)
@@ -213,9 +246,25 @@ class DisplayPipeline:
                     anim = None
                     continue
 
-                self._put_frame(processed)
+                if self._on_demand:
+                    self._hand_over(processed)
+                else:
+                    self._put_frame(processed)
         except Exception:
             logger.exception("Generator thread crashed")
+
+    def _hand_over(self, frame: np.ndarray) -> None:
+        """Give the presenter the frame it asked for and wake it.
+
+        Replaces any frame it never collected (one that missed its tick), so
+        what it shows next is always the newest.
+        """
+        self._drain_queue()
+        self._frame_queue.put_nowait(frame)
+        if self._loop is not None and self._frame_ready is not None:
+            # The loop is closed once the pipeline stops
+            with contextlib.suppress(RuntimeError):
+                self._loop.call_soon_threadsafe(self._frame_ready.set)
 
     # --- Presenter (async) ------------------------------------------------
 
@@ -226,11 +275,13 @@ class DisplayPipeline:
             while self._running:
                 next_deadline += self.frame_interval
 
-                # Try to get a frame (non-blocking)
-                try:
-                    frame = self._frame_queue.get_nowait()
-                except queue.Empty:
-                    frame = None
+                if self._on_demand:
+                    frame = await self._request_frame(next_deadline)
+                else:
+                    try:
+                        frame = self._frame_queue.get_nowait()
+                    except queue.Empty:
+                        frame = None
 
                 if frame is None:
                     sleep_time = max(0.0, next_deadline - loop.time())
@@ -252,6 +303,28 @@ class DisplayPipeline:
             pass
         except Exception as e:
             raise HardwareError(f"Presenter failed: {e}") from e
+
+    async def _request_frame(self, deadline: float) -> np.ndarray | None:
+        """Ask the generator for this tick's frame and wait for it.
+
+        Gives up at the tick's deadline; a frame that arrives later is shown
+        on the next tick instead of a new one being made.
+        """
+        assert self._frame_ready is not None
+        self._frame_ready.clear()
+        with contextlib.suppress(queue.Empty):
+            return self._frame_queue.get_nowait()
+
+        self._frame_wanted.set()
+        try:
+            async with asyncio.timeout_at(deadline):
+                await self._frame_ready.wait()
+        except TimeoutError:
+            return None
+        try:
+            return self._frame_queue.get_nowait()
+        except queue.Empty:
+            return None
 
     async def _write_frame(self, frame: np.ndarray) -> None:
         """Send only the panels whose bits differ from what they last got.
@@ -284,6 +357,9 @@ class DisplayPipeline:
         await self.serial.connect()
         self._sent_panels = None
         self._running = True
+        self._loop = asyncio.get_running_loop()
+        self._frame_ready = asyncio.Event()
+        self._on_demand = False
 
         # Start generator thread with the initial animation as its first request
         self._stop_event.clear()
@@ -344,6 +420,7 @@ class DisplayPipeline:
             buffer_capacity=self._buffer_capacity,
             animation=self._current_animation,
             last_error=self._last_error[1] if self._last_error else None,
+            frames_on_demand=self._on_demand,
         )
 
     def get_last_frame_bits(self) -> np.ndarray | None:
@@ -385,3 +462,15 @@ class DisplayPipeline:
             raise AnimationError("No animation has been started")
         params = validate_params(self._requested_animation, params)
         self._requests.put(("configure", params))
+
+    async def send_input(self, action: str, pressed: bool = True) -> None:
+        """Press or release one of the running game's actions.
+
+        Applied before the game's next frame is made. Raises AnimationError
+        if the animation most recently requested isn't a game or has no such
+        action.
+        """
+        if self._requested_animation is None:
+            raise AnimationError("No game has been started")
+        validate_input(self._requested_animation, action)
+        self._requests.put(("input", (action, pressed)))

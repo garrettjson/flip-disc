@@ -11,8 +11,6 @@ Usage::
     print(phase_name(p))  # e.g. "waxing_crescent"
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 
 # Reference new moon: 2000-01-06 18:14 UTC

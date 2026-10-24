@@ -2,17 +2,19 @@
 name = "flipdisc"
 version = "0.1.0"
 description = "Python flip-disc display controller for Raspberry Pi"
-requires-python = ">=3.11"
+requires-python = ">=3.15"
 dependencies = [
     "fastapi>=0.104.0",
-    "uvicorn[standard]>=0.24.0",
+    # uvicorn[standard] minus PyYAML and python-dotenv, which nothing here uses,
+    # and watchfiles, which only --reload needs (in dev)
+    "uvicorn>=0.24.0",
+    "httptools>=0.6.3",
+    "uvloop>=0.15.1; sys_platform != 'win32'",
     "numpy>=1.24.0",
     "pyserial>=3.5",
     "websockets>=11.0",
     "aioserial>=1.3.0",
     "scipy>=1.11.0",
-    "scikit-image>=0.22.0",
-    "opensimplex>=0.4.5.1",
     "httpx>=0.27.0",
     "pillow>=10.0.0",
 ]
@@ -21,6 +23,8 @@ dependencies = [
 dev = [
     "pytest>=7.4.0",
     "ruff>=0.6.0",
+    # Lets --reload use change notifications; without it uvicorn polls
+    "watchfiles>=0.13",
 ]
 
 [build-system]
@@ -34,11 +38,11 @@ exclude = ["assets*"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py311"
+target-version = "py315"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "ICN", "PIE", "T20", "RET", "SIM", "ARG", "PTH", "ERA", "PL", "RUF"]
-ignore = ["E501", "PLR0913", "PLR0912", "PLR2004"]
+ignore = ["E501", "PLR0913", "PLR0917", "PLR0912", "PLR2004"]
 # Dimensions and ranges are written as 28×28 and 0–1 on purpose
 allowed-confusables = ["×", "–"]
 
@@ -46,10 +50,12 @@ allowed-confusables = ["×", "–"]
 "test_*.py" = ["T201", "T203"]
 "**/test_*.py" = ["T201", "T203"]
 "tests/**/*" = ["T201", "T203"]
-"**/cli.py" = ["T201", "PLC0415"]
+"**/cli.py" = ["T201"]
 "**/gfx/terminal.py" = ["T201"]  # printing frames is its purpose
 
 [tool.ruff.format]
+# Code examples in the docs keep their hand-aligned comments
+exclude = ["*.md"]
 quote-style = "double"
 indent-style = "space"
 line-ending = "lf"

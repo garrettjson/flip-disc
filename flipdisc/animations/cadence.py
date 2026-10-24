@@ -16,8 +16,6 @@ Use it for any whole-step motion. Continuous values (angles, physics
 positions that get rasterized) should keep scaling by ``dt`` directly.
 """
 
-from __future__ import annotations
-
 
 def _round_half_up(x: float) -> int:
     return int(x + 0.5)

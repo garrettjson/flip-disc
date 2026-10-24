@@ -21,6 +21,8 @@ async function postJSON(path, payload) {
 
 // Parameter schema per animation, served by GET /animations (see animations/params.py)
 let paramSchemas = {};
+// Controls per game, {action, label, keys}, served by GET /animations (see games/base.py)
+let gameControls = {};
 
 // Inputs for the weather fetch loop (POST /weather/config). These configure the
 // server's data source, not the animation, so they are not part of its schema.
@@ -48,36 +50,148 @@ const paramsContainer = document.getElementById('params-container');
 const paramErrorEl = document.getElementById('param-error');
 const currentAnimEl = document.getElementById('current-anim');
 const lastErrorEl = document.getElementById('last-error');
+const gameControlsEl = document.getElementById('game-controls');
+const gameControlsTable = document.getElementById('game-controls-table');
+const gameErrorEl = document.getElementById('game-error');
 
-function drawBits(bits, width, height) {
-  if (!bits || bits.length === 0) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    return;
+// Preview drawn as a board of discs. A disc that changes turns half a revolution
+// about its horizontal axis, so mid-flip it shows as a thin ellipse. Its angle runs
+// from 0 (dark side up) to PI (lit side up). The flip time is a visual guess, not a
+// measured property of the panels.
+const DISC = {
+  flipMs: 60,       // average half-turn; each disc gets its own speed within ±25%
+  radius: 0.43,     // fraction of the dot pitch
+  board: '#262626',
+  socket: '#080808', // the hole behind a disc, visible while it is edge-on
+  dark: [14, 14, 14],
+  lit: [242, 242, 238],
+};
+
+const board = { width: 0, height: 0, angle: null, target: null, speed: null, animating: false, lastTick: 0 };
+
+function sizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const cssWidth = canvas.clientWidth || 280;
+  canvas.width = Math.round(cssWidth * dpr);
+  canvas.height = Math.round(cssWidth * dpr * board.height / board.width);
+}
+
+function resetBoard(bits, width, height) {
+  const n = width * height;
+  board.width = width;
+  board.height = height;
+  board.angle = new Float32Array(n);
+  board.target = new Uint8Array(n);
+  board.speed = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    board.speed[i] = Math.PI / (DISC.flipMs * (0.75 + 0.5 * Math.random()));
   }
-  const scaleX = canvas.width / width;
-  const scaleY = canvas.height / height;
-  ctx.fillStyle = 'black';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = 'white';
-  for (let y = 0; y < height; y++) {
+  readTargets(bits);
+  // The first frame appears as-is rather than flipping in from dark
+  for (let i = 0; i < n; i++) board.angle[i] = board.target[i] * Math.PI;
+  sizeCanvas();
+  drawBoard();
+}
+
+function readTargets(bits) {
+  for (let y = 0; y < board.height; y++) {
     const row = bits[y];
-    for (let x = 0; x < width; x++) {
-      if (row[x]) {
-        ctx.fillRect(Math.floor(x * scaleX), Math.floor(y * scaleY), Math.ceil(scaleX), Math.ceil(scaleY));
+    for (let x = 0; x < board.width; x++) board.target[y * board.width + x] = row[x] ? 1 : 0;
+  }
+}
+
+function shade(rgb, k) {
+  return `rgb(${rgb[0] * k | 0},${rgb[1] * k | 0},${rgb[2] * k | 0})`;
+}
+
+function drawBoard() {
+  const pitch = canvas.width / board.width;
+  const r = pitch * DISC.radius;
+  ctx.fillStyle = DISC.board;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (let y = 0; y < board.height; y++) {
+    const cy = (y + 0.5) * pitch;
+    for (let x = 0; x < board.width; x++) {
+      const cx = (x + 0.5) * pitch;
+      const a = board.angle[y * board.width + x];
+      const tilt = Math.abs(Math.cos(a));
+      if (tilt < 1) {
+        ctx.fillStyle = DISC.socket;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+        ctx.fill();
       }
+      // A tilted disc catches less light
+      ctx.fillStyle = shade(a > Math.PI / 2 ? DISC.lit : DISC.dark, 0.5 + 0.5 * tilt);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, r, Math.max(r * tilt, 0.6), 0, 0, 2 * Math.PI);
+      ctx.fill();
     }
   }
 }
 
+function tick(now) {
+  const dt = Math.min(now - board.lastTick, 50);
+  board.lastTick = now;
+  let moving = false;
+  for (let i = 0; i < board.angle.length; i++) {
+    const goal = board.target[i] * Math.PI;
+    const a = board.angle[i];
+    if (a === goal) continue;
+    // A disc reversed mid-flip turns back from wherever it is
+    const step = board.speed[i] * dt;
+    board.angle[i] = goal > a ? Math.min(goal, a + step) : Math.max(goal, a - step);
+    if (board.angle[i] !== goal) moving = true;
+  }
+  drawBoard();
+  if (moving) {
+    requestAnimationFrame(tick);
+  } else {
+    board.animating = false;
+  }
+}
+
+function drawBits(bits, width, height) {
+  if (!bits || bits.length === 0) {
+    board.width = 0;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+  if (width !== board.width || height !== board.height) {
+    resetBoard(bits, width, height);
+    return;
+  }
+  readTargets(bits);
+  if (board.animating) return;
+  board.animating = true;
+  board.lastTick = performance.now();
+  requestAnimationFrame(tick);
+}
+
+window.addEventListener('resize', () => {
+  if (!board.width) return;
+  sizeCanvas();
+  drawBoard();
+});
+
 async function loadAnimations() {
   const data = await fetchJSON('/animations');
   paramSchemas = data.params || {};
+  gameControls = data.controls || {};
   animSelect.innerHTML = '';
-  (data.animations || []).forEach(name => {
-    const opt = document.createElement('option');
-    opt.value = name; opt.textContent = name;
-    animSelect.appendChild(opt);
-  });
+  const addGroup = (label, names) => {
+    if (!names || names.length === 0) return;
+    const group = document.createElement('optgroup');
+    group.label = label;
+    names.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name; opt.textContent = name;
+      group.appendChild(opt);
+    });
+    animSelect.appendChild(group);
+  };
+  addGroup('Animations', data.animations);
+  addGroup('Games', data.games);
   updateAnimationParams();
 }
 
@@ -212,12 +326,13 @@ async function refreshStatus() {
   fpsEl.textContent = s.config?.refresh_rate ?? '-';
   presentedEl.textContent = (p.frames_presented ?? 0).toString();
   currentAnimEl.textContent = p.animation ?? '-';
+  setRunningGame(p.playing && gameControls[p.animation] ? p.animation : null);
   lastErrorEl.textContent = p.last_error ?? '';
   if (s.config) {
     sizeEl.textContent = `${s.config.width} x ${s.config.height}`;
   }
   const cap = p.buffer_capacity !== undefined ? p.buffer_capacity : '-';
-  bufferEl.textContent = `capacity ${cap}`;
+  bufferEl.textContent = p.frames_on_demand ? 'none (frames made on demand)' : `capacity ${cap}`;
 }
 
 // Live preview over WebSocket; falls back to HTTP polling on disconnect
@@ -243,6 +358,84 @@ function connectPreviewWS() {
   }
 }
 
+// --- Game input ---------------------------------------------------------
+// While a game is running, keys mapped to its actions are sent over
+// /ws/input as {action, pressed}. The server only sees actions, never keys.
+
+let runningGame = null;
+let keyToAction = {};
+const heldKeys = new Set();
+let inputWS = null;
+
+const KEY_NAMES = { ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓', Space: 'Space' };
+function keyName(code) {
+  if (KEY_NAMES[code]) return KEY_NAMES[code];
+  return code.replace(/^Key|^Digit/, '');
+}
+
+function setRunningGame(name) {
+  if (name === runningGame) return;
+  releaseAllKeys();
+  runningGame = name;
+  keyToAction = {};
+  gameControlsTable.innerHTML = '';
+  gameErrorEl.textContent = '';
+  gameControlsEl.hidden = !name;
+  if (!name) return;
+  gameControls[name].forEach(control => {
+    control.keys.forEach(code => { keyToAction[code] = control.action; });
+    const row = gameControlsTable.insertRow();
+    row.insertCell().innerHTML = control.keys.map(k => `<kbd>${keyName(k)}</kbd>`).join('');
+    row.insertCell().textContent = control.label;
+  });
+}
+
+function sendInput(action, pressed) {
+  if (inputWS && inputWS.readyState === WebSocket.OPEN) {
+    inputWS.send(JSON.stringify({ action, pressed }));
+  }
+}
+
+function releaseAllKeys() {
+  heldKeys.forEach(code => sendInput(keyToAction[code], false));
+  heldKeys.clear();
+}
+
+function isTyping(target) {
+  return ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName);
+}
+
+function onKey(event, pressed) {
+  const action = keyToAction[event.code];
+  if (!runningGame || !action || isTyping(event.target)) return;
+  event.preventDefault();  // arrows and space would scroll the page
+  if (pressed) {
+    if (event.repeat || heldKeys.has(event.code)) return;
+    heldKeys.add(event.code);
+  } else {
+    if (!heldKeys.delete(event.code)) return;
+  }
+  sendInput(action, pressed);
+}
+
+document.addEventListener('keydown', e => onKey(e, true));
+document.addEventListener('keyup', e => onKey(e, false));
+// A key released while the window is in the background never sends keyup
+window.addEventListener('blur', releaseAllKeys);
+
+function connectInputWS() {
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  inputWS = new WebSocket(`${proto}://${window.location.host}/ws/input`);
+  inputWS.onmessage = (ev) => {
+    try {
+      gameErrorEl.textContent = JSON.parse(ev.data).error || '';
+    } catch (_) {
+      // ignore
+    }
+  };
+  inputWS.onclose = () => setTimeout(connectInputWS, 2000);
+}
+
 async function startSelected() {
   const name = animSelect.value;
   if (!name) {
@@ -262,6 +455,8 @@ async function startSelected() {
 
   try {
     await postJSON(`/anim/${encodeURIComponent(sel)}`, params);
+    // Otherwise the focused dropdown or button would take the game's keys
+    if (gameControls[sel]) document.activeElement.blur();
 
     // For weather, also configure the background fetch loop
     if (sel === 'weather') {
@@ -308,5 +503,6 @@ animSelect.addEventListener('change', updateAnimationParams);
   updateAnimationParams();
   await refreshStatus();
   connectPreviewWS();
+  connectInputWS();
   setInterval(refreshStatus, 1000);
 })();

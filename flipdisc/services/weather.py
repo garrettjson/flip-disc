@@ -8,47 +8,47 @@ Usage::
     print(data.temp, data.condition)  # e.g. 72.3, "sunny"
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 
-import httpx
+lazy import httpx
 
 from flipdisc.services.moon_phase import moon_phase
 
 # WMO weather interpretation codes → canonical condition strings
 # https://open-meteo.com/en/docs#weathervariables
-WMO_TO_CONDITION: dict[int, str] = {
-    0: "sunny",
-    1: "partly_cloudy",
-    2: "partly_cloudy",
-    3: "cloudy",
-    45: "fog",
-    48: "fog",
-    51: "rain",
-    53: "rain",
-    55: "rain",
-    56: "rain",
-    57: "rain",
-    61: "rain",
-    63: "rain",
-    65: "rain",
-    66: "rain",
-    67: "rain",
-    71: "snow",
-    73: "snow",
-    75: "snow",
-    77: "snow",
-    80: "rain",
-    81: "rain",
-    82: "rain",
-    85: "snow",
-    86: "snow",
-    95: "thunderstorm",
-    96: "thunderstorm",
-    99: "thunderstorm",
-}
+WMO_TO_CONDITION: frozendict[int, str] = frozendict(
+    {
+        0: "sunny",
+        1: "partly_cloudy",
+        2: "partly_cloudy",
+        3: "cloudy",
+        45: "fog",
+        48: "fog",
+        51: "rain",
+        53: "rain",
+        55: "rain",
+        56: "rain",
+        57: "rain",
+        61: "rain",
+        63: "rain",
+        65: "rain",
+        66: "rain",
+        67: "rain",
+        71: "snow",
+        73: "snow",
+        75: "snow",
+        77: "snow",
+        80: "rain",
+        81: "rain",
+        82: "rain",
+        85: "snow",
+        86: "snow",
+        95: "thunderstorm",
+        96: "thunderstorm",
+        99: "thunderstorm",
+    }
+)
 
 _OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 

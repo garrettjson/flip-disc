@@ -1,7 +1,5 @@
 """Clock animation — digital or analog display of current system time."""
 
-from __future__ import annotations
-
 from datetime import datetime
 from typing import override
 

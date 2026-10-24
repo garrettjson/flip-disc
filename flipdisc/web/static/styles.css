@@ -53,13 +53,25 @@ body {
 .button:disabled { background: #444; cursor: not-allowed; }
 
 .preview-canvas {
-  background: #000;
+  background: #262626;
   border: 2px solid #404040;
   border-radius: 4px;
-  image-rendering: pixelated;
   width: 100%;
   height: auto;
 }
+
+.game-controls { margin-top: 12px; }
+.game-controls h4 { margin: 0 0 6px 0; }
+.game-controls td { padding: 2px 12px 2px 0; }
+.game-controls kbd {
+  background: #2a2a2a;
+  border: 1px solid #555;
+  border-radius: 3px;
+  padding: 1px 6px;
+  margin-right: 4px;
+  font-family: inherit;
+}
+.game-error { color: #b00020; margin-top: 6px; }
 
 label { margin-right: 6px; }
 select, input { margin-right: 8px; }

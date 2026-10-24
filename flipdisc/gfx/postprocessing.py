@@ -1,10 +1,7 @@
 """Post-processing functions for animation frames."""
 
-from __future__ import annotations
-
 import numpy as np
-from scipy import ndimage
-from skimage import filters
+lazy from scipy import ndimage
 
 
 def binarize(frame: np.ndarray, threshold: float = 0.5) -> np.ndarray:
@@ -12,7 +9,9 @@ def binarize(frame: np.ndarray, threshold: float = 0.5) -> np.ndarray:
 
 
 def dither(frame: np.ndarray) -> np.ndarray:
-    return (filters.threshold_local(frame, 3) < frame).astype(np.bool_)
+    # Each pixel against a Gaussian-weighted mean of its 3×3 neighborhood
+    local_mean = ndimage.gaussian_filter(frame, sigma=1 / 3, mode="reflect")
+    return (local_mean < frame).astype(np.bool_)
 
 
 def blur(frame: np.ndarray, sigma: float = 1.0) -> np.ndarray:
@@ -51,13 +50,15 @@ def downsample(frame: np.ndarray, factor: int) -> np.ndarray:
     return frame.reshape(h // factor, factor, w // factor, factor).mean(axis=(1, 3))
 
 
-PROCESSING_FUNCTIONS = {
-    "binarize": binarize,
-    "dither": dither,
-    "blur": blur,
-    "sharpen": sharpen,
-    "threshold": threshold,
-}
+PROCESSING_FUNCTIONS = frozendict(
+    {
+        "binarize": binarize,
+        "dither": dither,
+        "blur": blur,
+        "sharpen": sharpen,
+        "threshold": threshold,
+    }
+)
 
 
 def apply_processing_pipeline(

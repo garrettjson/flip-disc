@@ -1,11 +1,8 @@
 """Tests for clip loader, ClipAnimation, and ComposedAnimation."""
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 from PIL import Image
-from skimage.io import imsave
 
 from flipdisc.animations.base import get_animation, register_animation
 from flipdisc.animations.bouncing_dot import BouncingDot
@@ -659,7 +656,7 @@ def test_image_animation_configure_src(tmp_path):
     # Create a test PNG: all-white 56×7
     img = np.ones((7, 56), dtype=np.float32)
     png_path = tmp_path / "white.png"
-    imsave(str(png_path), (img * 255).astype(np.uint8))
+    Image.fromarray((img * 255).astype(np.uint8)).save(png_path)
 
     anim = ImageAnimation(56, 7)
     anim.configure(src=str(png_path))
@@ -670,7 +667,7 @@ def test_image_animation_configure_src(tmp_path):
 def test_image_animation_render_shape(tmp_path):
     img = np.ones((7, 56), dtype=np.float32)
     png_path = tmp_path / "white.png"
-    imsave(str(png_path), (img * 255).astype(np.uint8))
+    Image.fromarray((img * 255).astype(np.uint8)).save(png_path)
 
     anim = ImageAnimation(56, 7)
     anim.configure(src=str(png_path))

@@ -1,7 +1,5 @@
 """Clip playback animation — plays a pre-rendered .npz frame sequence."""
 
-from __future__ import annotations
-
 from typing import override
 
 import numpy as np

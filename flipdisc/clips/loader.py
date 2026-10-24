@@ -9,7 +9,7 @@ from PIL import Image
 
 _CLIPS_CONFIG = "assets/clips/clips.toml"
 
-_clip_cache: dict[str, "ClipData"] = {}
+_clip_cache: dict[str, ClipData] = {}
 
 
 @dataclass

@@ -27,6 +27,8 @@ The animation object is created, configured, stepped, and rendered **only on the
 3. `pipeline.start("bouncing_dot")` connects serial, queues the initial animation as the generator's first request, starts the generator thread, and starts the presenter task. **Nothing is displayed yet**: the generator waits until `play()` is called, which happens on the first `POST /anim/{name}`.
 4. uvicorn serves the API.
 
+Imports that are slow and needed by only some code paths are `lazy` (PEP 810), so they load on first use: scipy (blur, dither and sharpen in `gfx/postprocessing.py`, `life`, `fluid`), httpx (the first weather fetch), and in `cli.py` uvicorn and the server stack, which `preview` never touches. The first frame of an animation that uses scipy pays its import (a few hundred ms on the dev machine), which the frame buffer absorbs. The animation and game modules themselves are imported normally: they register when they run, so running with `-X lazy_imports=all` leaves the registry empty.
+
 `--reload` takes a different path: uvicorn imports `flipdisc.app:create_asgi_app` as a factory and manages the pipeline through a lifespan hook. The factory is called with no arguments, so in reload mode `--config` and `--log-level` are not passed through (config is discovered from the working directory).
 
 ## 3. The life of a frame
@@ -57,6 +59,8 @@ Each iteration, in order:
 5. `apply_processing_pipeline(gray, anim.processing_steps)` (`gfx/postprocessing.py`): each named step in order. The default is `("binarize",)`, a strict `> 0.5` threshold producing a bool array. `None` skips processing — `ClipAnimation` and every `ComposedAnimation` (including `weather`) put **float32** 0/1 frames on the queue.
 6. `queue.put(frame, timeout=0.05)`, retried until there is room or the pipeline stops.
 
+**On-demand frames (games).** When the animation has `FRAMES_ON_DEMAND` (every `Game` does), the switch sets `_on_demand` and the loop changes between steps 3 and 4: it waits on `_frame_wanted`, a `threading.Event` the presenter sets at each tick, waking every 50 ms to apply other requests. When the tick comes it applies all pending requests again (so input received up to that moment is in), then steps and renders as usual. Instead of `put`, `_hand_over` replaces whatever is in the queue with the new frame and sets the presenter's `_frame_ready` (an `asyncio.Event`, via `call_soon_threadsafe`). Nothing is computed ahead, so the buffer is effectively one frame and only exists for the handover.
+
 Animation code can raise anything, so the thread has two crash barriers, both of which log the traceback and record a message for `get_status().last_error`:
 
 - **Applying a request.** A failed switch or configure leaves the running animation untouched (a switch only drains the frame queue after the replacement has been built and configured).
@@ -64,15 +68,15 @@ Animation code can raise anything, so the thread has two crash barriers, both of
 
 Consequences worth knowing:
 
-- **The generator runs ahead, then idles.** It fills the queue as fast as it can, then produces exactly one frame each time the presenter takes one. Every frame shown was computed up to `buffer_duration` (1 s) earlier.
-- **A switch drains the queue; a configure does not.** A live `configure` becomes visible only after the frames already queued have played out.
+- **The generator runs ahead, then idles.** It fills the queue as fast as it can, then produces exactly one frame each time the presenter takes one. Every frame shown was computed up to `buffer_duration` (1 s) earlier. On-demand animations are the exception: each frame is computed at the tick that shows it.
+- **A switch drains the queue; a configure does not.** A live `configure` becomes visible only after the frames already queued have played out (on the next tick for on-demand animations).
 - **One produced frame = one display interval of animation time.** Animation speeds are therefore in real units per second as long as the generator keeps up; when it can't, the display shows slow motion, not dropped frames.
 
 ### Presenter loop (`_present_loop`)
 
 Deadline-paced: `next_deadline += frame_interval` each tick, then:
 
-1. `queue.get_nowait()`. If the queue is empty, sleep to the deadline and try again — the display simply holds its last frame.
+1. `queue.get_nowait()`. If the queue is empty, sleep to the deadline and try again — the display simply holds its last frame. For an on-demand animation, `_request_frame` instead sets `_frame_wanted` and awaits `_frame_ready` until the tick's deadline. A frame that misses the deadline stays in the queue and is shown on the next tick without asking for another. Measured with the mock transport, input reaches the written frame 25 ms after it is sent on average and 50 ms at worst (one tick at 20 fps).
 2. `_write_frame`: split into panels and compare each with what that panel was last sent (`_sent_panels`). **If none changed, nothing is written to serial.**
 3. Otherwise encode only the changed panels plus the flush (`ProtocolEncoder.encode_panels`), `await serial.write_frames([batch])`, record what each panel now shows, store a copy as `_last_frame`, and increment `frames_presented`. `_sent_panels` is cleared by `start` and `reconnect_serial`, so the first frame after either sends every panel.
 4. Offer a copy to the preview queue (dropped if the queue is full).
@@ -102,11 +106,12 @@ HTTP handlers run on the event loop and call `DisplayPipeline` methods. None of 
 | `set_animation(name, params)` | `_requests` ← `("switch", …)` | construct, configure, then drain the frame queue |
 | `configure_animation(params)` | `_requests` ← `("configure", …)` | `anim.configure(**params)` |
 | `reset()` | `_requests` ← `("reset", None)` | `anim.reset()` |
+| `send_input(action, pressed)` | `_requests` ← `("input", …)` | `game.handle_input(action, pressed)` |
 | `play()` / `pause()` | `_play_event` | run / idle |
 
-All three request kinds go onto one `queue.SimpleQueue` and are applied in order, so:
+All request kinds go onto one `queue.SimpleQueue` and are applied in order, so:
 
-- **Validation happens before handoff.** `set_animation` and `configure_animation` call `validate_params(name, params)`, which checks the request against the animation class's declared `PARAMS` without needing an instance. An unknown animation, unknown parameter, wrong type, or out-of-range value raises `AnimationError`, which the routes return as a 400. `configure_animation` validates against the animation most recently *requested*, since a switch may still be in the queue.
+- **Validation happens before handoff.** `send_input` checks that the animation most recently requested is a game with that action (`validate_input`). `set_animation` and `configure_animation` call `validate_params(name, params)`, which checks the request against the animation class's declared `PARAMS` without needing an instance. An unknown animation, unknown parameter, wrong type, or out-of-range value raises `AnimationError`, which the routes return as a 400. `configure_animation` validates against the animation most recently *requested*, since a switch may still be in the queue.
 - The HTTP response is sent **before** the change is applied, so anything that fails later (a missing clip or image file, a bad `layer.<id>.<key>` value, an animation bug) shows up only in `last_error` on `GET /status`.
 - Requests are not lost or reordered: a switch followed immediately by a configure applies both, to the new animation.
 - `last_error` is cleared by the next successful switch, or by a later success of the same kind of request.
@@ -118,7 +123,9 @@ All three request kinds go onto one `queue.SimpleQueue` and are applied in order
 - `WS /ws/preview` registers a callback with `set_preview_callback`. The presenter drops each frame into an `asyncio.Queue(maxsize=1)`; a consumer task fires the callback, which sets an event; the handler then sends `get_last_frame_bits()` as JSON `{width, height, bits}`.
 - **One preview client at a time.** Registering a callback replaces the previous one, and a disconnecting client clears it, which also stops the preview for any other connected client.
 - The preview shows `_last_frame`, i.e. the last frame *written to serial*, so it mirrors what the panels were told to show.
-- The UI (`web/index.html`, `web/static/app.js`) is static files with no build step. `GET /animations` returns the animation names and, under `params`, each one's parameter schema; the UI builds its form from that (number inputs with min/max/step, checkboxes, selects for `choices`) and shows the server's message when a value is rejected. Changing a control sends just that one parameter to `POST /animations/configure`. The only hard-coded fields are latitude and longitude for the weather fetch loop, which configure the server's data source and are not animation parameters.
+- `WS /ws/input` and `POST /input` take `{action, pressed}` and call `send_input`. The socket answers only bad messages, with `{"error": …}`.
+- The UI (`web/index.html`, `web/static/app.js`) is static files with no build step. `GET /animations` returns the animation names, the game names (`games`), each one's parameter schema under `params`, and each game's controls under `controls`. While a game is playing, the UI lists its controls under the preview and sends the mapped keys over `/ws/input`, ignoring key auto-repeat and keys typed into form fields, and releasing held keys when the window loses focus. The rest of the form works as for animations: it builds its form from the schema (number inputs with min/max/step, checkboxes, selects for `choices`) and shows the server's message when a value is rejected. Changing a control sends just that one parameter to `POST /animations/configure`. The only hard-coded fields are latitude and longitude for the weather fetch loop, which configure the server's data source and are not animation parameters.
+- The preview canvas draws each dot as a disc. A dot that changes animates a half-turn about its horizontal axis (`DISC` in `app.js`; the ~60 ms flip time is a visual guess, not measured on the panels). The animation is cosmetic and client-side only: the frames, and what is sent to serial, are unchanged.
 
 ## 6. Animations
 
@@ -128,9 +135,9 @@ Each animation declares its parameters as a `PARAMS` tuple of `Param` (`animatio
 
 Three families:
 
-Motion comes in two kinds (`flipdisc/animations/CLAUDE.md`, "Motion"): whole-step motion (text scroll, precipitation, `bouncing_dot`, `life` generations) goes through `Cadence` (`animations/cadence.py`), which snaps the requested rate to an even number of frames per step; continuous motion (`wireframe_cube`, `pendulum`, `fluid`, `simplex_noise`) scales by `dt`.
+Motion comes in two kinds (`flipdisc/animations/CLAUDE.md`, "Motion"): whole-step motion (text scroll, precipitation, `bouncing_dot`, `life` generations, `rain_splash` drops, `sandpile` pouring and rolling, `sort` operations) goes through `Cadence` (`animations/cadence.py`), which snaps the requested rate to an even number of frames per step; continuous motion (`wireframe_cube`, `pendulum`, `fluid`, `point_cloud`, `simplex_noise`, `bouncing_balls`, `rip`) scales by `dt`.
 
-- **Direct** — subclass `Animation`, draw into a `(height, width)` float array: `bouncing_dot`, `life`, `pendulum`, `simplex_noise`, `text`, `clock`, `image`, `clip`, `fluid`.
+- **Direct** — subclass `Animation`, draw into a `(height, width)` float array: `bouncing_dot`, `life`, `pendulum`, `simplex_noise`, `text`, `clock`, `image`, `clip`, `fluid`, `point_cloud`, `bouncing_balls`, `rain_splash`, `rip`, `sandpile`, `sort`.
 - **Supersampled** — subclass `SupersampledAnimation`, draw at N× resolution in `render_hires()`; the base class block-averages down so edges binarize cleanly: `wireframe_cube`, and `AnalogClockAnimation` (used by `clock` when `style="analog"`).
 - **Composed** — `ComposedAnimation` holds a list of layers, each an independent animation with a position, blend mode, and visibility. On each render it runs every layer's own processing steps, then blits ("over" replaces, "add" is `np.maximum`). `weather` is the main example: a full-canvas `WeatherIconAnimation` (icon bitmap + precipitation particle effects from `precipitation.py`) plus a `TextAnimation` for the temperature, with the degree symbol drawn on top in an overridden `render_gray()`.
 
@@ -150,3 +157,14 @@ Assets are found by **working-directory-relative paths** (`assets/text/fonts.tom
 ## 9. Tests
 
 `flipdisc/tests/`, run with `uv run pytest -q`. Mostly unit tests on animations, fonts, clips, weather parsing (httpx mocked), moon phase, and the encoder (`test_formats.py`). `test_basic.py` and `test_pacing.py` start a real `DisplayPipeline` on the mock transport and sleep for real time, which is most of the suite's ~20 s. Nothing tests against hardware.
+
+## 10. Measuring frame cost
+
+Python 3.15's sampling profiler (Tachyon) reads a running process's stacks without changing any code, which makes it the tool for measuring frame cost on the Pi:
+
+```
+python -m profiling.sampling attach -a --sort tottime -d 10 <server pid>
+python -m profiling.sampling run -a --sort tottime -m flipdisc preview -a fluid -n 200
+```
+
+`-a` samples every thread; without it only the main thread is sampled, and animations run on the generator thread. `--flamegraph -o out.html` writes a flame graph instead. On macOS both forms need `sudo -E`. On Linux, attaching may need it too, depending on the kernel's ptrace setting; this hasn't been tried on the Pi.

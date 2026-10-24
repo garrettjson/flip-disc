@@ -5,15 +5,13 @@ assets/images/weather/ BMPs and renders them full-canvas. Precipitation
 conditions (snow) overlay animated particle effects on top of cloud.bmp.
 """
 
-from __future__ import annotations
-
 import math
 from pathlib import Path
 from typing import ClassVar, override
 
 import numpy as np
-from skimage.io import imread
 
+from flipdisc.gfx.images import load_gray
 from flipdisc.gfx.postprocessing import downsample
 
 from .base import Animation
@@ -29,21 +27,23 @@ from .precipitation import (
 _ICONS_DIR = Path(__file__).resolve().parents[2] / "assets" / "images" / "weather"
 
 # Map condition strings to BMP filenames
-_CONDITION_FILES: dict[str, str] = {
-    "sunny": "sun.bmp",
-    "partly_cloudy": "cloud.bmp",
-    "cloudy": "cloud.bmp",
-    "rain": "cloud.bmp",
-    "snow": "cloud.bmp",
-    "thunderstorm": "cloud.bmp",
-    "fog": "fog.bmp",
-    "moon": "moon.bmp",
-    "sunrise": "sun.bmp",
-    "sunset": "sun.bmp",
-}
+_CONDITION_FILES: frozendict[str, str] = frozendict(
+    {
+        "sunny": "sun.bmp",
+        "partly_cloudy": "cloud.bmp",
+        "cloudy": "cloud.bmp",
+        "rain": "cloud.bmp",
+        "snow": "cloud.bmp",
+        "thunderstorm": "cloud.bmp",
+        "fog": "fog.bmp",
+        "moon": "moon.bmp",
+        "sunrise": "sun.bmp",
+        "sunset": "sun.bmp",
+    }
+)
 
 # Conditions that use animated precipitation instead of a static BMP
-_PRECIP_CONDITIONS = {"snow", "rain", "thunderstorm"}
+_PRECIP_CONDITIONS = frozenset({"snow", "rain", "thunderstorm"})
 
 _CONDITIONS = set(_CONDITION_FILES.keys())
 _FALLBACK = "cloudy"
@@ -161,17 +161,17 @@ def _render_moon(canvas: np.ndarray, phase: float) -> None:
         ]
 
 
-def _build_icons() -> dict[str, np.ndarray]:
+def _build_icons() -> frozendict[str, np.ndarray]:
     icons: dict[str, np.ndarray] = {}
     loaded: dict[str, np.ndarray] = {}
 
     for condition, filename in _CONDITION_FILES.items():
         path = _ICONS_DIR / filename
         if filename not in loaded:
-            loaded[filename] = imread(str(path), as_gray=True).astype(np.float32)
+            loaded[filename] = load_gray(path)
         icons[condition] = loaded[filename]
 
-    return icons
+    return frozendict(icons)
 
 
 def _cloud_bounds(icon: np.ndarray) -> tuple[tuple[int, int], int]:
@@ -199,7 +199,7 @@ class WeatherIconAnimation(Animation):
 
     PARAMS = ICON_PARAMS
 
-    ICONS: ClassVar[dict[str, np.ndarray]] = _build_icons()
+    ICONS: ClassVar[frozendict[str, np.ndarray]] = _build_icons()
 
     def __init__(self, width: int, height: int):
         super().__init__(width, height, processing_steps=("binarize",))

@@ -4,8 +4,6 @@ Defines enums and a static mapping from data size + refresh mode to command byte
 with a small facade bound to a DisplayConfig for convenient encoding.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable, Mapping
 
 import numpy as np

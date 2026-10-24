@@ -1,21 +1,24 @@
 """Simple CLI for running the Flip-Disc server and utilities."""
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import signal
 
 import numpy as np
 
-from .app import FlipDiscApplication
+# Lazy, like .app below: the server stack is slow to import and `preview`
+# doesn't need it
+lazy import uvicorn
+
+from .animations import get_animation, list_animations
+from .config import load_config
+from .gfx.postprocessing import apply_processing_pipeline
 from .logging_conf import setup_logging
+lazy from .app import FlipDiscApplication
 
 
 def _run_server_reload(args: argparse.Namespace) -> int:
     """Run with uvicorn's --reload (restarts process on file changes)."""
-    import uvicorn
-
     setup_logging(args.log_level)
     uvicorn.run(
         "flipdisc.app:create_asgi_app",
@@ -67,10 +70,6 @@ def _render_frame_ascii(frame: np.ndarray) -> str:
 
 
 def _preview(args: argparse.Namespace) -> int:
-    from .animations import get_animation, list_animations
-    from .config import load_config
-    from .gfx.postprocessing import apply_processing_pipeline
-
     if args.list:
         print("Available animations:")
         for name in list_animations():

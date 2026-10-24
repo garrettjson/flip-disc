@@ -1,7 +1,5 @@
 """Tests for moon phase calculation."""
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 
 from flipdisc.services.moon_phase import SYNODIC_PERIOD, moon_phase, phase_name
