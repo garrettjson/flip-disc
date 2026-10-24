@@ -135,9 +135,9 @@ Each animation declares its parameters as a `PARAMS` tuple of `Param` (`animatio
 
 Three families:
 
-Motion comes in two kinds (`flipdisc/animations/CLAUDE.md`, "Motion"): whole-step motion (text scroll, precipitation, `bouncing_dot`, `life` generations) goes through `Cadence` (`animations/cadence.py`), which snaps the requested rate to an even number of frames per step; continuous motion (`wireframe_cube`, `pendulum`, `fluid`, `simplex_noise`) scales by `dt`.
+Motion comes in two kinds (`flipdisc/animations/CLAUDE.md`, "Motion"): whole-step motion (text scroll, precipitation, `bouncing_dot`, `life` generations) goes through `Cadence` (`animations/cadence.py`), which snaps the requested rate to an even number of frames per step; continuous motion (`wireframe_cube`, `pendulum`, `fluid`, `point_cloud`, `simplex_noise`) scales by `dt`.
 
-- **Direct** — subclass `Animation`, draw into a `(height, width)` float array: `bouncing_dot`, `life`, `pendulum`, `simplex_noise`, `text`, `clock`, `image`, `clip`, `fluid`.
+- **Direct** — subclass `Animation`, draw into a `(height, width)` float array: `bouncing_dot`, `life`, `pendulum`, `simplex_noise`, `text`, `clock`, `image`, `clip`, `fluid`, `point_cloud`.
 - **Supersampled** — subclass `SupersampledAnimation`, draw at N× resolution in `render_hires()`; the base class block-averages down so edges binarize cleanly: `wireframe_cube`, and `AnalogClockAnimation` (used by `clock` when `style="analog"`).
 - **Composed** — `ComposedAnimation` holds a list of layers, each an independent animation with a position, blend mode, and visibility. On each render it runs every layer's own processing steps, then blits ("over" replaces, "add" is `np.maximum`). `weather` is the main example: a full-canvas `WeatherIconAnimation` (icon bitmap + precipitation particle effects from `precipitation.py`) plus a `TextAnimation` for the temperature, with the degree symbol drawn on top in an overridden `render_gray()`.
 

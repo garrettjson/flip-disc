@@ -128,7 +128,7 @@ flip-disc/
    │  ├─ weather.py, weather_icon.py, precipitation.py
    │  ├─ clip.py, image.py
    │  └─ bouncing_dot.py, life.py, pendulum.py, simplex_noise.py,
-   │     wireframe_cube.py, fluid.py
+   │     wireframe_cube.py, fluid.py, point_cloud.py
    ├─ fonts/loader.py         # BitmapFont class + load_font(name)
    ├─ clips/                  # GIF clip loader + importer utilities
    ├─ services/               # Weather fetch (Open-Meteo), moon phase
