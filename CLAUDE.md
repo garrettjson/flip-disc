@@ -54,7 +54,7 @@ Goals stated by the owner; some are not yet true of the code. Ask before proposi
 Decisions the owner has made about the refactor (October 2026):
 
 - **Python for everything, for the time being.** A rewrite in another language was considered and set aside.
-- **Performance: profile, then NumPy; Numba only when NumPy can't do it** (October 2026). Every animation now fits easily: `fluid` costs about 2.5 ms per frame on the dev machine (unmeasured on a Pi) and every other animation about 1 ms or less. `simplex_noise` went from 18 ms to 0.5 ms by replacing opensimplex (a per-pixel loop meant to be compiled by Numba) with NumPy simplex noise (`gfx/noise.py`), and `wireframe_cube` halved by drawing its brush in one NumPy operation.
+- **Performance: profile, then NumPy; Numba only when NumPy can't do it** (October 2026). Every animation now fits easily: `fluid` costs about 2.5 ms per frame on the dev machine (unmeasured on a Pi) and every other animation about 1 ms or less. At larger sizes `fluid` grows roughly in proportion to its area: about 100 ms per frame at 196×196 (34k particles), where it took 590 ms when its pressure solve was a banded Cholesky (cost ∝ size⁴); `animations/poisson.py` now switches to multigrid-preconditioned CG above about 1000 cells. `simplex_noise` went from 18 ms to 0.5 ms by replacing opensimplex (a per-pixel loop meant to be compiled by Numba) with NumPy simplex noise (`gfx/noise.py`), and `wireframe_cube` halved by drawing its brush in one NumPy operation.
 - **Numba is not a dependency; add it when a simulation needs it.** Tried October 2026. What we learned:
   - **Wheels:** Numba has 3.15 wheels for the Pi, Apple Silicon Macs, Linux and Windows, but none for Intel Macs since 0.62.1. This marker installs it everywhere it can and skips Intel Macs: `"numba>=0.68; sys_platform != 'darwin' or platform_machine != 'x86_64'"`.
   - **Compiling:** on the dev machine (Python 3.13), a 10-line function took 1.3 s to compile on first call; a cached one took 0.16 s to load in a fresh process. The Pi is slower, and every animation using it stalls when first started.
@@ -141,7 +141,7 @@ Registered names: `bouncing_balls`, `bouncing_dot`, `clip`, `clock`, `composed`,
 
 Games (`flipdisc/games/`, listed separately by `GET /animations`): `snake`, `tetris`.
 
-Unregistered building blocks: `SupersampledAnimation` (render at N× and block-average for anti-aliasing), `AnalogClockAnimation` (used by `clock` with `style="analog"`), `WeatherIconAnimation` + `precipitation.py` effects (used by `weather`).
+Unregistered building blocks: `SupersampledAnimation` (render at N× and block-average for anti-aliasing), `AnalogClockAnimation` (used by `clock` with `style="analog"`), `WeatherIconAnimation` + `precipitation.py` effects (used by `weather`), `poisson.py` (the pressure solver used by `fluid`).
 
 Interface (`flipdisc/animations/base.py`):
 

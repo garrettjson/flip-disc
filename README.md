@@ -130,6 +130,7 @@ flip-disc/
    │  ├─ bouncing_balls.py, bouncing_dot.py, fluid.py, life.py,
    │  │  pendulum.py, point_cloud.py, rain_splash.py, rip.py,
    │  │  sandpile.py, simplex_noise.py, wireframe_cube.py
+   │  ├─ poisson.py           # Pressure solver for fluid (multigrid CG)
    │  └─ sorting/             # `sort`: one module per algorithm
    ├─ fonts/loader.py         # BitmapFont class + load_font(name)
    ├─ clips/                  # GIF clip loader + importer utilities

@@ -24,9 +24,9 @@ import math
 from typing import Any, override
 
 import numpy as np
-lazy from scipy.linalg import solveh_banded
 lazy from scipy.spatial import cKDTree
 
+from . import poisson
 from .base import Animation, register_animation
 from .params import Param
 
@@ -232,12 +232,11 @@ class FluidSimulation(Animation):
     def _project(self, fluid: np.ndarray, density: np.ndarray) -> None:
         """Make the grid velocities incompressible in fluid cells.
 
-        Solves the pressure equation exactly: the system is symmetric and
-        banded (each cell couples to its four neighbours), with one unknown
-        per display cell and an identity row for cells that hold no fluid.
+        One pressure unknown per fluid cell, coupled to its four neighbours;
+        `poisson` solves it exactly on small grids and to within about 1e-4 on
+        large ones (relative to the peak pressure).
         """
         u, v = self._u, self._v
-        w, h = self.width, self.height
         inner = fluid[1:-1, 1:-1]
 
         divergence = u[1:-1, 2:] - u[1:-1, 1:-1] + v[2:, 1:-1] - v[1:-1, 1:-1]
@@ -245,19 +244,9 @@ class FluidSimulation(Animation):
         # tighter than they should be
         divergence -= np.maximum(density[1:-1, 1:-1] - self._rest_density, 0.0)
 
-        bands = np.zeros((w + 1, w * h))
-        bands[0] = np.where(inner, self._open_neighbors + _REGULARIZATION, 1.0).ravel()
-        right = np.zeros((h, w))
-        right[:, :-1] = -1.0 * (inner[:, :-1] & inner[:, 1:])
-        bands[1] = right.ravel()
-        below = np.zeros((h, w))
-        below[:-1, :] = -1.0 * (inner[:-1, :] & inner[1:, :])
-        bands[w] = below.ravel()
-        rhs = np.where(inner, -divergence, 0.0).ravel()
-
         pressure = np.zeros_like(u)
-        solved = solveh_banded(bands, rhs, lower=True, check_finite=False)
-        pressure[1:-1, 1:-1] = solved.reshape(h, w)
+        diag = self._open_neighbors + _REGULARIZATION
+        pressure[1:-1, 1:-1] = poisson.solve(inner, diag, -divergence)
 
         open_ = self._open
         u[:, 1:] += (pressure[:, :-1] - pressure[:, 1:]) * open_[:, :-1] * open_[:, 1:]
