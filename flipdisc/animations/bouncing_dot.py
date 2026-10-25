@@ -7,6 +7,7 @@ import numpy as np
 from .base import Animation, register_animation
 from .cadence import Cadence
 from .params import Param
+from .viewport import Viewport
 
 
 @register_animation("bouncing_dot")
@@ -20,12 +21,12 @@ class BouncingDot(Animation):
         Param("speed_y", float, 40.0, min=-200, max=200, step=5, unit="px/s"),
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=("binarize",))
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=("binarize",))
 
         # Dot position (whole pixels)
-        self.x = min(self.params["start_x"], width - 1)
-        self.y = min(self.params["start_y"], height - 1)
+        self.x = min(self.params["start_x"], self.width - 1)
+        self.y = min(self.params["start_y"], self.height - 1)
 
         # Velocity in pixels per second; the sign is the direction
         self.dx = self.params["speed_x"]

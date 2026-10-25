@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from flipdisc.animations.viewport import Viewport
 from flipdisc.games.snake import Snake, _State
 
 DT = 0.05  # 20 fps
@@ -22,7 +23,7 @@ def _move(game: Snake, cells: int = 1) -> None:
 
 def _game(width: int = 28, height: int = 28, **params) -> Snake:
     np.random.seed(0)
-    game = Snake(width, height)
+    game = Snake(Viewport(width, height))
     if params:
         game.configure(**params)
         game.reset()
@@ -180,7 +181,7 @@ def test_food_blinks():
 
 def test_new_food_never_lands_on_the_snake():
     np.random.seed(1)
-    game = Snake(5, 5)
+    game = Snake(Viewport(5, 5))
     game.configure(start_length=4)
     game.reset()
     for _ in range(200):

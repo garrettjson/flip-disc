@@ -6,6 +6,7 @@ import asyncio
 import numpy as np
 
 from flipdisc.animations import get_animation, list_animations
+from flipdisc.animations.viewport import Viewport
 from flipdisc.config import DisplayConfig
 from flipdisc.engine.pipeline import DisplayPipeline
 
@@ -29,7 +30,7 @@ async def _async_test_animations_direct():
     names = list_animations()
     assert len(names) > 0
     for name in names:
-        anim = get_animation(name, config.width, config.height)
+        anim = get_animation(name, Viewport(config.width, config.height))
         for _ in range(3):
             anim.step(1 / 30)
             gray = anim.render_gray()

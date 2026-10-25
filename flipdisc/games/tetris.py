@@ -21,6 +21,7 @@ import numpy as np
 from flipdisc.animations.base import register_animation
 from flipdisc.animations.cadence import Cadence
 from flipdisc.animations.params import Param
+from flipdisc.animations.viewport import Viewport
 from flipdisc.fonts.loader import load_font
 
 from .base import Control, Game
@@ -143,14 +144,14 @@ class Tetris(Game):
         Control("start", "Start / new game", keys=("Enter",)),
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=None)
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=None)
         self._panel_font = load_font("compact")
         self._score_font = load_font("standard")
         # Border at the left and along the bottom, the next piece above
-        self.well_width = max(1, min(_WELL_WIDTH, width - 2))
-        self.well_height = max(1, min(_WELL_HEIGHT, height - 2))
-        self._well_top = height - self.well_height - 1
+        self.well_width = max(1, min(_WELL_WIDTH, self.width - 2))
+        self.well_height = max(1, min(_WELL_HEIGHT, self.height - 2))
+        self._well_top = self.height - self.well_height - 1
         self._new_game()
 
     def _new_game(self) -> None:

@@ -5,6 +5,10 @@ big drop) and then a one-pixel ring that expands by whole pixels until it
 reaches that drop's own maximum radius and vanishes. Maximum radii are drawn
 from a normal distribution, so most rings die young and the surface stays
 readable instead of filling with full-screen circles.
+
+Sizes and speeds are in dots on the 28-dot design display. Ring radii and
+speeds grow with the display; splashes grow more slowly, and rings thicken
+only a little (see ``scaling.py``).
 """
 
 from dataclasses import dataclass, field
@@ -12,9 +16,12 @@ from typing import override
 
 import numpy as np
 
+from flipdisc.gfx import draw
+
 from .base import Animation, register_animation
 from .cadence import Cadence
 from .params import Param
+from .viewport import Viewport
 
 # A big drop pushes more water, so its ring travels further on average
 _BIG_RING_SCALE = 1.5
@@ -22,7 +29,7 @@ _BIG_RING_SCALE = 1.5
 
 @dataclass
 class _Ripple:
-    cx: float  # ring centre; a big splash is centred between pixels
+    cx: float  # centre of the splash and its ring
     cy: float
     big: bool
     max_radius: int
@@ -42,32 +49,37 @@ class RainSplash(Animation):
         Param("ring_size_spread", float, 1.5, min=0, max=10, step=0.5, unit="px"),
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=None)
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=None)
         self._ripples: list[_Ripple] = []
-        self._ys, self._xs = np.mgrid[0:height, 0:width].astype(np.float32)
+        # Splash widths in dots, and how thick a ring is
+        self._small = self.scale.dots(1)
+        self._big = self.scale.dots(2)
+        self._ring_width = self.scale.line()
+
+    def _splash_size(self, big: bool) -> int:
+        return self._big if big else self._small
 
     def _add_ripple(self, x: int, y: int, big: bool, max_radius: int) -> None:
         """Start a splash whose top-left dot is at (x, y)."""
-        offset = 0.5 if big else 0.0
-        self._ripples.append(_Ripple(x + offset, y + offset, big, max_radius))
+        half = self._splash_size(big) / 2
+        self._ripples.append(_Ripple(x + half, y + half, big, max_radius))
 
     def _spawn(self) -> None:
         big = np.random.random() < self.params["big_drop_chance"]
-        size = 2 if big else 1
+        size = self._splash_size(big)
         x = np.random.randint(0, max(1, self.width - size + 1))
         y = np.random.randint(0, max(1, self.height - size + 1))
         mean = self.params["ring_size"] * (_BIG_RING_SCALE if big else 1.0)
-        max_radius = max(
-            1, round(np.random.normal(mean, self.params["ring_size_spread"]))
-        )
-        self._add_ripple(x, y, big, max_radius)
+        spread = self.params["ring_size_spread"]
+        radius = np.random.normal(self.scale.length(mean), self.scale.length(spread))
+        self._add_ripple(x, y, big, max(1, round(radius)))
 
     @override
     def step(self, dt: float) -> None:
         self.current_time += dt
 
-        speed = self.params["ring_speed"]
+        speed = self.scale.length(self.params["ring_speed"])
         for ripple in self._ripples:
             ripple.radius += ripple.cadence.advance(speed, dt)
         self._ripples = [r for r in self._ripples if r.radius <= r.max_radius]
@@ -81,15 +93,14 @@ class RainSplash(Animation):
     def render_gray(self) -> np.ndarray:
         frame = np.zeros((self.height, self.width), dtype=np.float32)
         for ripple in self._ripples:
+            size = self._splash_size(ripple.big)
+            centre = (ripple.cx, ripple.cy)
             if ripple.radius == 0:
-                x, y = int(ripple.cx), int(ripple.cy)
-                size = 2 if ripple.big else 1
-                frame[y : y + size, x : x + size] = 1.0
+                draw.block(frame, centre, size)
                 continue
-            # A big splash's ring starts just outside its 2x2 block
-            radius = ripple.radius + (0.5 if ripple.big else 0.0)
-            dist = np.hypot(self._xs - ripple.cx, self._ys - ripple.cy)
-            frame[np.abs(dist - radius) < 0.5] = 1.0
+            # The first ring runs through the dots just outside the splash
+            radius = ripple.radius + (size - 1) / 2
+            draw.ring(frame, centre, radius, self._ring_width)
         return frame
 
     @override

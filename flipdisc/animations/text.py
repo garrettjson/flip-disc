@@ -9,6 +9,7 @@ from flipdisc.fonts.loader import list_fonts, load_font
 from .base import Animation, register_animation
 from .cadence import Cadence
 from .params import Param
+from .viewport import Viewport
 
 _MODES = ("static", "scroll_left", "scroll_up", "scroll_down")
 
@@ -26,8 +27,8 @@ class TextAnimation(Animation):
         Param("align", str, "center", choices=("center", "left")),
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=("binarize",))
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=("binarize",))
         self._font = load_font(self.params["font"])
         self._text_image: np.ndarray | None = None
         self._mode: str = self.params["mode"]

@@ -23,6 +23,7 @@ from .precipitation import (
     RainEffect,
     SnowEffect,
 )
+from .viewport import Viewport
 
 _ICONS_DIR = Path(__file__).resolve().parents[2] / "assets" / "images" / "weather"
 
@@ -201,8 +202,8 @@ class WeatherIconAnimation(Animation):
 
     ICONS: ClassVar[frozendict[str, np.ndarray]] = _build_icons()
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=("binarize",))
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=("binarize",))
         self._condition = _FALLBACK
         self._precip: SnowEffect | RainEffect | LightningEffect | None = None
         self._moon_phase: float = self.params["moon_phase"]  # 0.5 = full moon

@@ -10,6 +10,7 @@ from flipdisc.fonts.loader import list_fonts, load_font
 from .analog_clock import AnalogClockAnimation
 from .base import Animation, register_animation
 from .params import Param
+from .viewport import Viewport
 
 _STYLES = ("digital", "analog")
 
@@ -28,8 +29,8 @@ class ClockAnimation(Animation):
         Param("blink_colon", bool, False),
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=("binarize",))
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=("binarize",))
 
         self._style = self.params["style"]
 
@@ -40,7 +41,7 @@ class ClockAnimation(Animation):
         self._blink_colon = self.params["blink_colon"]
 
         # Analog delegate
-        self._analog = AnalogClockAnimation(width, height)
+        self._analog = AnalogClockAnimation(self.viewport)
 
     @override
     def on_configure(self, **params) -> None:

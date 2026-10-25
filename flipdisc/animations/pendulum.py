@@ -5,8 +5,9 @@ display, with a bob at the end. One arm is the classic pendulum; two or more
 make a chaotic multi-pendulum whose motion never repeats. Each joint carries
 an equal point mass and the arms are rigid and massless.
 
-Every size is relative to the display's smaller dimension, so the pendulum
-looks the same, and swings at the same speed, on any display.
+The length and the swing are relative to the display's smaller dimension, so
+the pendulum swings the same way on any display; the mount, bob, and rod grow
+more slowly than the display (see ``scaling.py``).
 """
 
 import math
@@ -15,13 +16,13 @@ from typing import override
 
 import numpy as np
 
+from flipdisc.gfx import draw
+
 from .base import Animation, register_animation
 from .params import Param
+from .viewport import Viewport
 
-# Sizes are given in dots on a display whose smaller dimension is this many
-# dots, and scaled to the actual display
-_DESIGN_SIZE = 28
-
+# Sizes in dots on the 28-dot design display
 _MOUNT_ROWS = 2
 _MOUNT_COLUMNS = 3
 # A bob of radius 1.6 covers 7 to 12 dots as it moves, staying about 3x3; at
@@ -62,15 +63,13 @@ class Pendulum(Animation):
         ),
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=None)
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=None)
 
-        size = min(width, height)
-        scale = size / _DESIGN_SIZE
-        self._px_per_m = size / _DISPLAY_SIZE_M
+        self._px_per_m = self.scale.short_side / _DISPLAY_SIZE_M
 
         # Pendulum physics parameters, in pixels
-        self.length = self.params["length"] * size
+        self.length = self.params["length"] * self.scale.short_side
         self.gravity = self.params["gravity"] * self._px_per_m
         self.damping = self.params["damping"]  # Air resistance
 
@@ -80,24 +79,17 @@ class Pendulum(Animation):
         self.velocities = np.zeros(0)
         self._restart()
 
-        # The mount hangs from the top centre; the pivot sits at the middle
-        # of its top edge, so the rod emerges from below it
-        mount_column = width // 2
-        half_mount = round((_MOUNT_COLUMNS - 1) / 2 * scale)
-        mount_rows = max(1, round(_MOUNT_ROWS * scale))
-        self._mount = (
-            slice(0, mount_rows),
-            slice(max(0, mount_column - half_mount), mount_column + half_mount + 1),
-        )
-        self.anchor_x = mount_column + 0.5
+        # The pivot is the middle of the mount's top edge, so the rod emerges
+        # from below it. It's on a dot's centre, and the mount an odd number
+        # of dots wide, so both are symmetric about the middle column.
+        self.anchor_x = self.width // 2 + 0.5
         self.anchor_y = 0.0
+        half_mount = round(self.scale.object((_MOUNT_COLUMNS - 1) / 2))
+        self._mount_size = (2 * half_mount + 1, self.scale.dots(_MOUNT_ROWS))
 
-        # Under √½ the bob could fall between pixel centres and vanish
-        self._bob_radius = max(math.sqrt(0.5), _BOB_RADIUS * scale)
-        self._rod_half_width = max(0.5, _ROD_WIDTH * scale / 2)
-
-        # Pixel centres, for drawing shapes as distance masks
-        self._ys, self._xs = np.mgrid[0:height, 0:width] + 0.5
+        # Under √½ the bob could fall between dot centres and vanish
+        self._bob_radius = max(math.sqrt(0.5), self.scale.object(_BOB_RADIUS))
+        self._rod_width = self.scale.line(_ROD_WIDTH)
 
     def _restart(self) -> None:
         arms = self.params["arms"]
@@ -115,7 +107,7 @@ class Pendulum(Animation):
         if "damping" in params:
             self.damping = params["damping"]
         if "length" in params:
-            self.length = params["length"] * min(self.width, self.height)
+            self.length = params["length"] * self.scale.short_side
         if "arms" in params or "initial_angle" in params:
             self._restart()
 
@@ -160,35 +152,14 @@ class Pendulum(Animation):
         pivot = np.array([[self.anchor_x, self.anchor_y]])
         return np.concatenate((pivot, pivot + np.cumsum(steps, axis=0)))
 
-    def _rod_mask(self, start: np.ndarray, end: np.ndarray) -> np.ndarray:
-        """Pixels whose centre lies near the segment from start to end.
-
-        The width is measured across rows (or columns, if the rod is nearer
-        horizontal), so it's as many dots wide at every angle; a perpendicular
-        width would draw a diagonal rod heavier.
-        """
-        rod_x, rod_y = end - start
-        length_sq = rod_x**2 + rod_y**2
-        if length_sq == 0:
-            return np.zeros(self._xs.shape, dtype=bool)
-        from_x, from_y = self._xs - start[0], self._ys - start[1]
-        t = np.clip((from_x * rod_x + from_y * rod_y) / length_sq, 0.0, 1.0)
-        reach = (
-            self._rod_half_width * max(abs(rod_x), abs(rod_y)) / math.sqrt(length_sq)
-        )
-        return (from_x - t * rod_x) ** 2 + (from_y - t * rod_y) ** 2 <= reach**2
-
     @override
     def render_gray(self) -> np.ndarray:
         """Render the mount, arms, and bob as 1-bit shapes."""
+        frame = np.zeros((self.height, self.width), dtype=np.float32)
         joints = self._joint_positions()
-        lit = np.zeros(self._xs.shape, dtype=bool)
         for start, end in pairwise(joints):
-            lit |= self._rod_mask(start, end)
-
-        bob_x, bob_y = joints[-1]
-        lit |= (self._xs - bob_x) ** 2 + (self._ys - bob_y) ** 2 <= self._bob_radius**2
-
-        frame = lit.astype(np.float32)
-        frame[self._mount] = 1.0
+            draw.line(frame, start, end, self._rod_width)
+        draw.disc(frame, joints[-1], self._bob_radius)
+        mount_width, mount_rows = self._mount_size
+        draw.block(frame, (self.anchor_x, mount_rows / 2), mount_width, mount_rows)
         return frame

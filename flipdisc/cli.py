@@ -10,7 +10,7 @@ import numpy as np
 # doesn't need it
 lazy import uvicorn
 
-from .animations import get_animation, list_animations
+from .animations import Viewport, get_animation, list_animations
 from .config import load_config
 from .gfx.postprocessing import apply_processing_pipeline
 from .logging_conf import setup_logging
@@ -81,7 +81,7 @@ def _preview(args: argparse.Namespace) -> int:
         return 1
 
     cfg = load_config(args.config)
-    anim = get_animation(args.animation, cfg.width, cfg.height)
+    anim = get_animation(args.animation, Viewport(cfg.width, cfg.height))
 
     if args.seed is not None:
         anim.reset(seed=args.seed)

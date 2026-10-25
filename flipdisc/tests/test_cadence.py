@@ -7,6 +7,7 @@ import pytest
 from flipdisc.animations.cadence import Cadence
 from flipdisc.animations.precipitation import RainEffect
 from flipdisc.animations.text import TextAnimation
+from flipdisc.animations.viewport import Viewport
 
 FPS = 20
 DT = 1 / FPS
@@ -60,7 +61,7 @@ def test_reset_restarts_the_count():
 
 
 def test_text_scrolls_at_an_even_cadence():
-    anim = TextAnimation(28, 28)
+    anim = TextAnimation(Viewport(28, 28))
     anim.configure(text="HELLO WORLD", mode="scroll_left")  # default speed
     offsets = []
     for _ in range(300):

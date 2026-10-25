@@ -21,6 +21,7 @@ from flipdisc.animations.base import (
     get_animation_class,
     list_animations,
 )
+from flipdisc.animations.viewport import Viewport
 from flipdisc.exceptions import AnimationError
 
 
@@ -51,11 +52,10 @@ class Game(Animation):
 
     def __init__(
         self,
-        width: int,
-        height: int,
+        viewport: Viewport,
         processing_steps: tuple[str, ...] | None = ("binarize",),
     ):
-        super().__init__(width, height, processing_steps=processing_steps)
+        super().__init__(viewport, processing_steps=processing_steps)
         self.held: set[str] = set()
 
     @classmethod

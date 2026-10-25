@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from flipdisc.animations.fluid import FluidSimulation
+from flipdisc.animations.viewport import Viewport
 from flipdisc.exceptions import AnimationError
 
 
@@ -18,14 +19,14 @@ def _run(anim: FluidSimulation, frames: int, dt: float = 0.05) -> list[np.ndarra
 
 
 def test_instantiation():
-    anim = FluidSimulation(28, 28)
+    anim = FluidSimulation(Viewport(28, 28))
     assert anim.width == 28
     assert anim.height == 28
     assert len(anim._x) > 0
 
 
 def test_render_shape_and_dtype():
-    anim = FluidSimulation(28, 28)
+    anim = FluidSimulation(Viewport(28, 28))
     frame = anim.render_gray()
     assert frame.shape == (28, 28)
     assert frame.dtype == np.float32
@@ -34,13 +35,13 @@ def test_render_shape_and_dtype():
 
 
 def test_starts_as_a_filled_block():
-    frame = FluidSimulation(28, 28).render_gray() > 0.5
+    frame = FluidSimulation(Viewport(28, 28)).render_gray() > 0.5
     assert not frame[:12].any()
     assert frame[16:].all()
 
 
 def test_step_produces_finite_output():
-    anim = FluidSimulation(28, 28)
+    anim = FluidSimulation(Viewport(28, 28))
     for _ in range(40):
         anim.step(0.05)
         frame = anim.render_gray()
@@ -50,7 +51,7 @@ def test_step_produces_finite_output():
 
 
 def test_particles_stay_inside_the_tank():
-    anim = FluidSimulation(28, 28)
+    anim = FluidSimulation(Viewport(28, 28))
     anim.configure(slosh_amplitude=1.5, slosh_frequency=0.5)
     _run(anim, 100)
     r = anim._particle_radius
@@ -60,7 +61,7 @@ def test_particles_stay_inside_the_tank():
 
 def test_keeps_its_volume_while_sloshing():
     np.random.seed(0)
-    anim = FluidSimulation(28, 28)
+    anim = FluidSimulation(Viewport(28, 28))
     lit = [f.sum() for f in _run(anim, 300)]
     nominal = 28 * 28 * 0.5
     assert min(lit) > 0.85 * nominal
@@ -69,7 +70,7 @@ def test_keeps_its_volume_while_sloshing():
 
 def test_settles_without_flipping_dots():
     np.random.seed(0)
-    anim = FluidSimulation(28, 28)
+    anim = FluidSimulation(Viewport(28, 28))
     anim.configure(slosh_amplitude=0.0)
     frames = _run(anim, 300)[200:]
     flips = sum((a != b).sum() for a, b in pairwise(frames))
@@ -81,7 +82,7 @@ def test_settles_without_flipping_dots():
 
 def test_fluid_follows_gravity_direction():
     # Hold the tank tilted so gravity pulls towards the right wall
-    frame = _tilted(FluidSimulation(28, 28), angle=0.6, frames=200)
+    frame = _tilted(FluidSimulation(Viewport(28, 28)), angle=0.6, frames=200)
     assert frame[:, 14:].sum() > frame[:, :14].sum() + 40
 
 
@@ -94,7 +95,7 @@ def _tilted(anim: FluidSimulation, angle: float, frames: int) -> np.ndarray:
 
 
 def test_configure_fill_level_restarts_with_more_fluid():
-    anim = FluidSimulation(28, 28)
+    anim = FluidSimulation(Viewport(28, 28))
     half = len(anim._x)
     anim.configure(fill_level=0.25)
     assert anim._fill_level == 0.25
@@ -102,7 +103,7 @@ def test_configure_fill_level_restarts_with_more_fluid():
 
 
 def test_full_tank_is_stable():
-    anim = FluidSimulation(28, 28)
+    anim = FluidSimulation(Viewport(28, 28))
     anim.configure(fill_level=1.0)
     frames = _run(anim, 20)
     assert np.isfinite(anim._vx).all()
@@ -110,13 +111,13 @@ def test_full_tank_is_stable():
 
 
 def test_old_sph_params_are_rejected():
-    anim = FluidSimulation(28, 28)
+    anim = FluidSimulation(Viewport(28, 28))
     with pytest.raises(AnimationError):
         anim.configure(particle_count=100)
 
 
 def test_reset():
-    anim = FluidSimulation(28, 28)
+    anim = FluidSimulation(Viewport(28, 28))
     count = len(anim._x)
     _run(anim, 10)
     anim.reset(seed=42)
@@ -127,7 +128,7 @@ def test_reset():
 
 def test_different_sizes():
     for w, h in [(14, 7), (28, 28), (56, 28)]:
-        anim = FluidSimulation(w, h)
+        anim = FluidSimulation(Viewport(w, h))
         _run(anim, 5)
         frame = anim.render_gray()
         assert frame.shape == (h, w)

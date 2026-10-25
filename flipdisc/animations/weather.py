@@ -18,6 +18,7 @@ from .base import register_animation
 from .composed import ComposedAnimation
 from .params import Param
 from .text import TextAnimation
+from .viewport import Viewport
 from .weather_icon import ICON_PARAMS, WeatherIconAnimation
 
 # Small degree symbol: 3×3 diamond
@@ -70,18 +71,18 @@ class WeatherAnimation(ComposedAnimation):
         *ICON_PARAMS,
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height)
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport)
         self._show_degree = self.params["show_degree"]
         self._override_condition: str | None = None
-        icon = WeatherIconAnimation(width, height)
+        icon = WeatherIconAnimation(self.viewport)
         icon.configure(condition="cloudy")
-        temp = TextAnimation(width - 1, 7)
+        temp = TextAnimation(self.viewport.region(self.width - 1, 7))
         temp.configure(text="--", mode="static", font="standard", align="left")
         self.compose(
             [
                 (icon, {"id": "icon", "x": 0, "y": 0, "blend": "add"}),
-                (temp, {"id": "temp", "x": 1, "y": height - 8, "blend": "add"}),
+                (temp, {"id": "temp", "x": 1, "y": self.height - 8, "blend": "add"}),
             ]
         )
 

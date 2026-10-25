@@ -8,6 +8,7 @@ lazy from scipy.ndimage import convolve
 from .base import Animation, register_animation
 from .cadence import Cadence
 from .params import Param
+from .viewport import Viewport
 
 # Kernel that counts the 8 neighbors of each cell (toroidal wrap)
 _NEIGHBOR_KERNEL = np.array([[1, 1, 1], [1, 0, 1], [1, 1, 1]])
@@ -39,10 +40,10 @@ class Life(Animation):
         Param("rate", float, 20.0, min=0, max=60, step=1, unit="gen/s"),
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=("dither",))
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=("dither",))
 
-        self.grid = np.zeros((height, width), dtype=bool)
+        self.grid = np.zeros((self.height, self.width), dtype=bool)
         self.generation = 0
         self.rate = self.params["rate"]  # generations per second
         self._cadence = Cadence()

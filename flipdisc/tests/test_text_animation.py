@@ -3,10 +3,11 @@
 import numpy as np
 
 from flipdisc.animations.text import TextAnimation
+from flipdisc.animations.viewport import Viewport
 
 
 def test_static_renders_centered():
-    anim = TextAnimation(28, 28)
+    anim = TextAnimation(Viewport(28, 28))
     anim.configure(text="HI", mode="static")
     frame = anim.render_gray()
     assert frame.shape == (28, 28)
@@ -16,7 +17,7 @@ def test_static_renders_centered():
 
 
 def test_static_too_wide_returns_blank():
-    anim = TextAnimation(10, 10)
+    anim = TextAnimation(Viewport(10, 10))
     # "ABCDEFGHIJ" = 10*5 + 9*1 = 59px, way too wide for 10px display
     anim.configure(text="ABCDEFGHIJ", mode="static")
     assert anim._error is not None
@@ -26,7 +27,7 @@ def test_static_too_wide_returns_blank():
 
 
 def test_scroll_left_advances():
-    anim = TextAnimation(28, 28)
+    anim = TextAnimation(Viewport(28, 28))
     anim.configure(text="HELLO", mode="scroll_left", speed=20.0, loop=False)
     initial_offset = anim._offset
     anim.step(0.1)
@@ -34,7 +35,7 @@ def test_scroll_left_advances():
 
 
 def test_scroll_left_completes_no_loop():
-    anim = TextAnimation(28, 28)
+    anim = TextAnimation(Viewport(28, 28))
     anim.configure(text="HI", mode="scroll_left", speed=1000.0, loop=False)
     # Step enough for text to fully scroll off
     for _ in range(100):
@@ -43,7 +44,7 @@ def test_scroll_left_completes_no_loop():
 
 
 def test_scroll_left_does_not_complete_with_loop():
-    anim = TextAnimation(28, 28)
+    anim = TextAnimation(Viewport(28, 28))
     anim.configure(text="HI", mode="scroll_left", speed=1000.0, loop=True)
     for _ in range(100):
         anim.step(0.1)
@@ -51,14 +52,14 @@ def test_scroll_left_does_not_complete_with_loop():
 
 
 def test_scroll_up_wraps_text():
-    anim = TextAnimation(28, 28)
+    anim = TextAnimation(Viewport(28, 28))
     anim.configure(text="HELLO WORLD", mode="scroll_up")
     frame = anim.render_gray()
     assert frame.shape == (28, 28)
 
 
 def test_scroll_down():
-    anim = TextAnimation(28, 28)
+    anim = TextAnimation(Viewport(28, 28))
     anim.configure(text="TEST", mode="scroll_down", speed=30.0)
     anim.step(0.5)
     frame = anim.render_gray()
@@ -66,7 +67,7 @@ def test_scroll_down():
 
 
 def test_configure_reset_cycle():
-    anim = TextAnimation(28, 28)
+    anim = TextAnimation(Viewport(28, 28))
     anim.configure(text="A", mode="scroll_left", speed=50.0, loop=False)
     for _ in range(50):
         anim.step(0.1)
@@ -77,14 +78,14 @@ def test_configure_reset_cycle():
 
 
 def test_render_before_configure():
-    anim = TextAnimation(28, 28)
+    anim = TextAnimation(Viewport(28, 28))
     frame = anim.render_gray()
     assert frame.shape == (28, 28)
     assert frame.sum() == 0
 
 
 def test_static_centers_text():
-    anim = TextAnimation(28, 28)
+    anim = TextAnimation(Viewport(28, 28))
     anim.configure(text="A", mode="static")
     frame = anim.render_gray()
     # "A" is 5x7. Should be centered at roughly (11, 10)

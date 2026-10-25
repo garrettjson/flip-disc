@@ -21,6 +21,13 @@ The spout stays at the top and moves around ``pour_position`` according to
 - ``gaussian`` swings it from side to side so that the time it spends at each
   point follows a normal distribution: slow through the middle, fast near the
   edges, so the pile builds up in the centre and thins out to either side.
+
+A grain is always one dot; a bigger display has more of them. Speeds and
+gravity are in dots on the 28-dot design display, and the pour rate is in
+grains per second there, growing with the display's area, so the pile builds,
+falls, and slumps the same way at any size (see ``scaling.py``). A column of
+the stream carries only so many grains, so a heavy pour, or any pour on a big
+display, falls as a wider stream.
 """
 
 import math
@@ -33,6 +40,7 @@ import numpy as np
 from .base import Animation, register_animation
 from .cadence import Cadence
 from .params import Param
+from .viewport import Viewport
 
 # How far ahead a grain looks for somewhere lower. Looking one column ahead
 # only, the gentlest possible slope is one step per column (45°); looking
@@ -52,7 +60,13 @@ _DEFLECT_SPEED_KEPT = 0.5
 # Speed grains leave the spout. Starting from rest they would crawl through
 # the top rows and bunch up there, making the stream look far heavier than
 # the pour rate.
-_SPOUT_SPEED = 5.0  # px/s
+_SPOUT_SPEED = 5.0  # design dots/s
+
+# A column of the stream carries at most this many grains a second on the
+# design display, and proportionally more on a bigger one, where they fall
+# faster, so grains in a column stay as far apart; a heavier pour widens the
+# stream
+_STREAM_COLUMN_RATE = 20.0  # grains/s
 
 # How far the spout sweeps either side of pour_position, as a fraction of the
 # display width (clipped at the edges)
@@ -91,10 +105,10 @@ class Sandpile(Animation):
         Param("sweep_speed", float, 0.1, min=0, max=1, step=0.01, unit="Hz"),
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=None)
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=None)
         # Expiry time of each settled grain, per column, bottom first
-        self._columns: list[list[float]] = [[] for _ in range(width)]
+        self._columns: list[list[float]] = [[] for _ in range(self.width)]
         self._falling: list[_FallingGrain] = []
         self._pour = Cadence()
         self._roll = Cadence()
@@ -102,6 +116,11 @@ class Sandpile(Animation):
         # Spout position relative to pour_position, as a fraction of the width
         self._spout_offset = 0.0
         self._random_target = 0.0
+
+    @property
+    def _gravity(self) -> float:
+        """In dots per second squared."""
+        return self.scale.length(self.params["gravity"])
 
     @property
     def _repose_slope(self) -> float:
@@ -123,7 +142,7 @@ class Sandpile(Animation):
         column.append(self.current_time + self.params["lifespan"] * jitter)
 
     def _fall(self, dt: float) -> None:
-        gravity = self.params["gravity"]
+        gravity = self._gravity
         still_falling = []
         for grain in self._falling:
             grain.vy += gravity * dt
@@ -181,16 +200,26 @@ class Sandpile(Animation):
         return round(position * (self.width - 1))
 
     def _pour_grains(self, dt: float) -> None:
-        count = self._pour.advance(self.params["pour_rate"], dt)
-        x = self._spout_x()
-        gravity = self.params["gravity"]
-        for i in range(count):
+        rate = self.params["pour_rate"] * self.scale.factor**2
+        count = self._pour.advance(rate, dt)
+        if count == 0:
+            return
+
+        # Each grain leaves from a random column across the stream
+        stream = math.ceil(rate / self.scale.length(_STREAM_COLUMN_RATE))
+        first = self._spout_x() - (stream - 1) // 2
+        offsets = np.random.randint(stream, size=count) if stream > 1 else [0] * count
+
+        gravity = self._gravity
+        spout_speed = self.scale.length(_SPOUT_SPEED)
+        for i, offset in enumerate(offsets):
+            x = min(max(first + int(offset), 0), self.width - 1)
             # Several grains in one frame left the spout at different moments
             # within it, so spread them along the stream instead of stacking
             # them on one pixel.
             elapsed = i * dt / count
-            y = _SPOUT_SPEED * elapsed + 0.5 * gravity * elapsed**2
-            self._falling.append(_FallingGrain(x, y, _SPOUT_SPEED + gravity * elapsed))
+            y = spout_speed * elapsed + 0.5 * gravity * elapsed**2
+            self._falling.append(_FallingGrain(x, y, spout_speed + gravity * elapsed))
 
     def _slope(self, x: int, height: int, direction: int) -> float:
         """How steeply a grain on top of a ``height`` stack in column x could
@@ -240,9 +269,11 @@ class Sandpile(Animation):
         self._fall(dt)
         self._move_spout(dt)
         self._pour_grains(dt)
-        # A grain tipping off a ledge falls one pixel in sqrt(2 / g) seconds;
-        # rolling one column takes about that long
-        roll_rate = math.sqrt(2 * self.params["gravity"])
+        # On the design display a grain tipping off a ledge falls one dot in
+        # sqrt(2 / g) seconds, and rolling one column takes about that long;
+        # a bigger display rolls proportionally faster, so the pile slumps
+        # at the same pace
+        roll_rate = self.scale.length(math.sqrt(2 * self.params["gravity"]))
         for _ in range(self._roll.advance(roll_rate, dt)):
             self._roll_grains()
 

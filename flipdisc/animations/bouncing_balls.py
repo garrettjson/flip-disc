@@ -17,8 +17,9 @@ All the balls are one size because balls of different sizes have different
 masses, and elastic collisions even out energy, not speed: a ball 16 times
 heavier ends up with the same energy on average, and so moves 4 times slower.
 
-Sizes and speeds are relative to the display's smaller dimension, so the
-animation looks the same on any display.
+Speeds are relative to the display's smaller dimension, so the motion looks
+the same on any display; the balls grow more slowly than the display, so a
+bigger one shows more of them in finer detail (see ``scaling.py``).
 """
 
 import math
@@ -28,10 +29,9 @@ import numpy as np
 
 from .base import Animation, register_animation
 from .params import Param
+from .viewport import Viewport
 
-# Ball diameters in dots on a display whose smaller dimension is this many
-# dots, and scaled to the actual display (never below one dot)
-_DESIGN_SIZE = 28
+# Ball diameters in dots on the 28-dot design display
 _DIAMETERS = frozendict(small=1, large=4)
 
 # The furthest any ball moves in one physics substep, as a fraction of its
@@ -79,9 +79,8 @@ class BouncingBalls(Animation):
         Param("squash", float, 0.3, min=0, max=0.5, step=0.05),
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=None)
-        self._size = min(width, height)
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=None)
 
         # Centre (x, y) and velocity of each ball, in px and px/s
         self._pos = np.zeros((0, 2))
@@ -97,8 +96,7 @@ class BouncingBalls(Animation):
     # ------------------------------------------------------------------
 
     def _restart(self) -> None:
-        scale = self._size / _DESIGN_SIZE
-        self._diameter = max(1, round(_DIAMETERS[self.params["size"]] * scale))
+        self._diameter = self.scale.dots(_DIAMETERS[self.params["size"]])
         self._radius = self._diameter / 2
         # Where a ball's centre stops at the walls, as (x, y)
         self._wall_high = np.array([self.width, self.height]) - self._radius
@@ -128,7 +126,7 @@ class BouncingBalls(Animation):
 
     def _launch(self) -> None:
         """Send every ball off at ``speed`` in a random direction."""
-        speed = self.params["speed"] * self._size
+        speed = self.params["speed"] * self.scale.short_side
         angle = np.random.uniform(0, 2 * math.pi, len(self._pos))
         self._vel = speed * np.column_stack((np.cos(angle), np.sin(angle)))
 
@@ -198,7 +196,7 @@ class BouncingBalls(Animation):
 
     def _squash_amount(self, impact: np.ndarray | float) -> np.ndarray | float:
         """How far an impact at ``impact`` px/s squashes a ball."""
-        full_speed = _FULL_SQUASH_SPEED * self._size
+        full_speed = _FULL_SQUASH_SPEED * self.scale.short_side
         return self.params["squash"] * np.minimum(impact / full_speed, 1.0)
 
     def _squash_ball(self, i: int, impact: float, nx: float, ny: float) -> None:

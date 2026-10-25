@@ -14,7 +14,8 @@ shape as they fly off the display. The pull starts slowly and accelerates, so
 a rip opens as a sliver and is gone a few frames later.
 
 Sizes are relative to the display's smaller dimension, so the animation looks
-the same on any display.
+the same on any display; the first crack is a line, so it widens more slowly
+(see ``scaling.py``).
 """
 
 import math
@@ -22,8 +23,11 @@ from typing import override
 
 import numpy as np
 
+from flipdisc.gfx.draw import pixel_centres
+
 from .base import Animation, register_animation
 from .params import Param
+from .viewport import Viewport
 
 # Clock comparisons allow for floating-point error in the frame times summed
 # to reach them, so a cycle always takes the same number of frames
@@ -33,21 +37,25 @@ _EPS = 1e-6
 # of its width and height
 _CROSSING_REGION = 0.5
 
-# From its first frame the tear is a crack this far either side of its line,
-# a line of dots right across the display
-_CRACK = 0.5
+# From its first frame the tear is a crack this wide (in dots on the 28-dot
+# design display), a line of dots right across the display
+_CRACK_WIDTH = 1.0
 
 
 class _Tear:
     """One tear's geometry, measured for every dot."""
 
-    def __init__(self, profile: np.ndarray, distance: np.ndarray, pull: float):
+    def __init__(
+        self, profile: np.ndarray, distance: np.ndarray, pull: float, crack: float
+    ):
         # Each dot's share of the full bulge (1 level with the grab point,
         # 0 at the ends of the tear), and its distance from the tear line
         self.profile = profile
         self.distance = distance
         # How far the halves' straight part must move to clear every dot
         self.pull = pull
+        # How far either side of the tear line the first crack reaches
+        self.crack = crack
 
     def opening(self, progress: float, bulge: float) -> np.ndarray:
         """Which dots the hole has uncovered ``progress`` of the way through
@@ -58,7 +66,7 @@ class _Tear:
         # the rest of the pull moves the whole edge
         curve = bulge * math.tanh(grabbed / bulge) if bulge > 0 else 0.0
         edge = curve * self.profile + (grabbed - curve)
-        return self.distance < np.maximum(edge, _CRACK)
+        return self.distance < np.maximum(edge, self.crack)
 
 
 @register_animation("rip")
@@ -76,12 +84,11 @@ class Rip(Animation):
         Param("bulge", float, 0.3, min=0, max=1, step=0.05),
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=None)
-        self._size = min(width, height)
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=None)
+        self._crack = self.scale.line(_CRACK_WIDTH) / 2
         # Centres (x, y) of the dots
-        rows, cols = np.mgrid[0:height, 0:width]
-        self._dots = np.stack((cols + 0.5, rows + 0.5), axis=-1)
+        self._dots = np.stack(pixel_centres(self.width, self.height), axis=-1)
         self._restart()
 
     def _restart(self) -> None:
@@ -114,6 +121,7 @@ class Rip(Animation):
             profile=np.sqrt(np.clip(1 - (s / half_length) ** 2, 0, None)),
             distance=np.abs(h),
             pull=np.abs(h).max() + 0.5,
+            crack=self._crack,
         )
 
     @override
@@ -136,7 +144,7 @@ class Rip(Animation):
         if self._tear is None:
             return frame
         progress = (self._clock - self.params["pause"]) / self.params["rip_time"]
-        bulge = self.params["bulge"] * self._size
+        bulge = self.params["bulge"] * self.scale.short_side
         hole = self._tear.opening(min(max(progress, 0.0), 1.0), bulge)
         frame[hole] = 1.0 - self._top
         return frame

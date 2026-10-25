@@ -122,7 +122,8 @@ flip-disc/
    ├─ engine/pipeline.py      # DisplayPipeline: generator thread + async presenter
    ├─ animations/             # Animation classes + registry
    │  ├─ base.py              # Animation ABC, registry, factory
-   │  ├─ supersampled.py      # Base class for anti-aliased rendering
+   │  ├─ viewport.py          # Viewport: an animation's box on a display
+   │  ├─ scaling.py           # DisplayScale: how sizes grow with the display
    │  ├─ composed.py          # Layered compositions
    │  ├─ text.py, clock.py, analog_clock.py
    │  ├─ weather.py, weather_icon.py, precipitation.py
@@ -142,6 +143,7 @@ flip-disc/
    │  ├─ panel_map.py         # Slice canvas into per-panel bitmaps
    │  └─ serial.py            # Serial transports (hardware + mock)
    ├─ gfx/
+   │  ├─ draw.py              # Crisp 1-bit shapes: line, disc, ring, block
    │  ├─ postprocessing.py    # Binarize, dither, blur, sharpen, threshold, downsample
    │  └─ terminal.py          # Print frames in the terminal for debugging
    ├─ web/                    # FastAPI endpoints, WebSocket preview, web UI

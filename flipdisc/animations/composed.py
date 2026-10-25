@@ -5,9 +5,9 @@ register with @register_animation. The API then starts it by name::
 
     @register_animation("weather_dashboard")
     class WeatherDashboard(ComposedAnimation):
-        def __init__(self, width, height):
-            super().__init__(width, height)
-            temp = TextAnimation(41, 7)
+        def __init__(self, viewport):
+            super().__init__(viewport)
+            temp = TextAnimation(self.viewport.region(41, 7))
             temp.configure(text="--", mode="static")
             self.compose(
                 [
@@ -36,6 +36,7 @@ from flipdisc.gfx.postprocessing import apply_processing_pipeline
 
 from .base import Animation, get_animation, register_animation, validate_params
 from .params import Param
+from .viewport import Viewport
 
 # Layer fields managed directly on _Layer (not forwarded to sub-animation)
 _LAYER_FIELDS = frozendict(
@@ -127,8 +128,8 @@ class ComposedAnimation(Animation):
     # Subclasses that wire their layers in __init__ replace this with their own
     PARAMS = (Param("layers", list, None, nullable=True),)
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=None)
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=None)
         self._layers: list[_Layer] = []
 
     # ------------------------------------------------------------------
@@ -252,7 +253,7 @@ class ComposedAnimation(Animation):
         for lc in layers_config:
             w = int(lc.get("width", self.width))
             h = int(lc.get("height", self.height))
-            anim = get_animation(str(lc["type"]), w, h)
+            anim = get_animation(str(lc["type"]), self.viewport.region(w, h))
             if lc.get("params"):
                 anim.configure(**lc["params"])
             pairs.append((anim, lc))

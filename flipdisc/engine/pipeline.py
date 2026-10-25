@@ -23,7 +23,7 @@ from typing import Any
 
 import numpy as np
 
-from flipdisc.animations import Animation, get_animation, validate_params
+from flipdisc.animations import Animation, Viewport, get_animation, validate_params
 from flipdisc.config import DisplayConfig
 from flipdisc.exceptions import AnimationError, HardwareError, SerialConnectionError
 from flipdisc.games import Game, validate_input
@@ -156,7 +156,7 @@ class DisplayPipeline:
         """Apply one control request and return the animation to keep running."""
         if kind == "switch":
             name, params = payload
-            new_anim = get_animation(name, self.cfg.width, self.cfg.height)
+            new_anim = get_animation(name, Viewport(self.cfg.width, self.cfg.height))
             if params:
                 new_anim.configure(**params)
             # Only drop queued frames once the replacement is known to work

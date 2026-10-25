@@ -3,7 +3,8 @@
 import numpy as np
 import pytest
 
-from flipdisc.animations.sandpile import Sandpile
+from flipdisc.animations.sandpile import Sandpile, _FallingGrain
+from flipdisc.animations.viewport import Viewport
 
 
 def _run(anim: Sandpile, seconds: float, dt: float = 0.05) -> None:
@@ -21,7 +22,7 @@ def _grains(anim: Sandpile) -> int:
 
 def test_render_shape_and_values():
     np.random.seed(0)
-    anim = Sandpile(28, 28)
+    anim = Sandpile(Viewport(28, 28))
     for _ in range(100):
         anim.step(0.05)
         frame = anim.render_gray()
@@ -31,7 +32,7 @@ def test_render_shape_and_values():
 
 
 def test_stream_falls_from_the_pour_position():
-    anim = Sandpile(28, 28)
+    anim = Sandpile(Viewport(28, 28))
     anim.configure(pour_position=0.25, sweep_speed=0)
     _run(anim, 0.5)  # before anything lands
     lit_columns = set(np.nonzero(anim.render_gray())[1].tolist())
@@ -40,20 +41,54 @@ def test_stream_falls_from_the_pour_position():
 
 def test_stronger_gravity_lands_sooner():
     def first_landing(gravity: float) -> int:
-        anim = Sandpile(28, 28)
+        anim = Sandpile(Viewport(28, 28))
         anim.configure(gravity=gravity)
-        for frame in range(200):
-            anim.step(0.05)
-            if _heights(anim).any():
-                return frame
-        raise AssertionError("nothing landed")
+        return _first_landing(anim)
 
     assert first_landing(200) < first_landing(60) < first_landing(15)
 
 
+def _first_landing(anim: Sandpile) -> int:
+    for frame in range(400):
+        anim.step(0.05)
+        if _heights(anim).any():
+            return frame
+    raise AssertionError("nothing landed")
+
+
+def test_a_grain_is_one_dot_on_any_display():
+    anim = Sandpile(Viewport(126, 126))
+    anim.configure(pour_rate=0)
+    anim._falling = [_FallingGrain(60, 40.5, 0.0)]
+    anim._columns[10] = [600.0]
+    assert anim.render_gray().sum() == 2
+
+
+def test_grains_fall_the_display_in_the_same_time_at_any_size():
+    def fall_time(size: int) -> int:
+        anim = Sandpile(Viewport(size, size))
+        anim.configure(pour_rate=0)
+        anim._falling = [_FallingGrain(size // 2, 0.0, 0.0)]
+        return _first_landing(anim)
+
+    assert abs(fall_time(126) - fall_time(28)) <= 1
+
+
+@pytest.mark.parametrize(
+    ("size", "pour_rate", "width"),
+    [(28, 5, 1), (28, 60, 3), (56, 5, 1), (56, 20, 2), (126, 5, 2), (126, 60, 14)],
+)
+def test_a_heavier_pour_or_bigger_display_widens_the_stream(size, pour_rate, width):
+    np.random.seed(2)
+    anim = Sandpile(Viewport(size, size))
+    anim.configure(pour_rate=pour_rate, movement="static")
+    _run(anim, 1)
+    assert len({grain.x for grain in anim._falling}) == width
+
+
 def test_poured_grains_are_conserved():
     np.random.seed(1)
-    anim = Sandpile(28, 28)
+    anim = Sandpile(Viewport(28, 28))
     anim.configure(pour_rate=10, lifespan=600)
     _run(anim, 10)
     assert _grains(anim) == 100
@@ -62,7 +97,7 @@ def test_poured_grains_are_conserved():
 def test_higher_friction_builds_a_taller_narrower_pile():
     def pile(friction: float) -> np.ndarray:
         np.random.seed(2)
-        anim = Sandpile(28, 28)
+        anim = Sandpile(Viewport(28, 28))
         anim.configure(friction=friction, lifespan=600, pour_rate=10, sweep_speed=0)
         _run(anim, 12)
         anim.configure(pour_rate=0)
@@ -78,7 +113,7 @@ def test_higher_friction_builds_a_taller_narrower_pile():
 @pytest.mark.parametrize("friction", [0.0, 0.4, 1.0])
 def test_pile_comes_to_rest_when_pouring_stops(friction):
     np.random.seed(3)
-    anim = Sandpile(28, 28)
+    anim = Sandpile(Viewport(28, 28))
     anim.configure(friction=friction, lifespan=600)
     _run(anim, 10)
     anim.configure(pour_rate=0)
@@ -91,7 +126,7 @@ def test_pile_comes_to_rest_when_pouring_stops(friction):
 
 def test_lifespan_limits_the_pile_size():
     np.random.seed(4)
-    anim = Sandpile(28, 28)
+    anim = Sandpile(Viewport(28, 28))
     anim.configure(pour_rate=10, lifespan=5)
     _run(anim, 30)
     # Grains last 5 s ± 25% once landed, so about 10/s * 5 s are in the pile
@@ -100,7 +135,7 @@ def test_lifespan_limits_the_pile_size():
 
 def test_pile_centres_under_the_pour():
     np.random.seed(5)
-    anim = Sandpile(28, 28)
+    anim = Sandpile(Viewport(28, 28))
     anim.configure(pour_position=0.2, lifespan=600, sweep_speed=0)
     _run(anim, 8)
     heights = _heights(anim)
@@ -109,7 +144,7 @@ def test_pile_centres_under_the_pour():
 
 
 def test_stream_is_not_bunched_at_the_spout():
-    anim = Sandpile(28, 28)
+    anim = Sandpile(Viewport(28, 28))
     anim.configure(sweep_speed=0)  # default pour rate
     for _ in range(16):  # stream established, nothing landed yet
         anim.step(0.05)
@@ -120,7 +155,7 @@ def test_stream_is_not_bunched_at_the_spout():
 
 
 def test_spout_sweeps_side_to_side():
-    anim = Sandpile(28, 28)
+    anim = Sandpile(Viewport(28, 28))
     anim.configure(sweep_speed=0.5)
     positions = set()
     for _ in range(40):  # one full cycle
@@ -132,7 +167,7 @@ def test_spout_sweeps_side_to_side():
 
 
 def test_no_sweep_holds_the_spout_still():
-    anim = Sandpile(28, 28)
+    anim = Sandpile(Viewport(28, 28))
     anim.configure(sweep_speed=0, pour_position=0.7)
     for _ in range(40):
         anim.step(0.05)
@@ -140,7 +175,7 @@ def test_no_sweep_holds_the_spout_still():
 
 
 def test_static_movement_holds_the_spout_still():
-    anim = Sandpile(28, 28)
+    anim = Sandpile(Viewport(28, 28))
     anim.configure(movement="static", sweep_speed=0.5, pour_position=0.3)
     for _ in range(40):
         anim.step(0.05)
@@ -148,7 +183,7 @@ def test_static_movement_holds_the_spout_still():
 
 
 def _spout_path(movement: str, seconds: float) -> np.ndarray:
-    anim = Sandpile(28, 28)
+    anim = Sandpile(Viewport(28, 28))
     anim.configure(movement=movement, sweep_speed=0.1)
     path = []
     for _ in range(round(seconds / 0.05)):
@@ -195,7 +230,7 @@ def test_random_movement_wanders_smoothly_within_the_sweep():
 
 def test_full_display_stops_accepting_grains():
     np.random.seed(6)
-    anim = Sandpile(7, 7)
+    anim = Sandpile(Viewport(7, 7))
     anim.configure(pour_rate=60, lifespan=600, friction=0)
     _run(anim, 20)
     assert (_heights(anim) == 7).all()
@@ -203,7 +238,7 @@ def test_full_display_stops_accepting_grains():
 
 
 def test_reset_clears_everything():
-    anim = Sandpile(28, 28)
+    anim = Sandpile(Viewport(28, 28))
     _run(anim, 5)
     anim.reset()
     assert _grains(anim) == 0
@@ -213,7 +248,7 @@ def test_reset_clears_everything():
 @pytest.mark.parametrize(("width", "height"), [(7, 7), (14, 7), (28, 7), (1, 1)])
 def test_other_sizes(width, height):
     np.random.seed(7)
-    anim = Sandpile(width, height)
+    anim = Sandpile(Viewport(width, height))
     for _ in range(100):
         anim.step(0.05)
         assert anim.render_gray().shape == (height, width)

@@ -10,6 +10,7 @@ from flipdisc.animations.clip import ClipAnimation, _blit_fit
 from flipdisc.animations.composed import ComposedAnimation, _blit_region
 from flipdisc.animations.image import ImageAnimation
 from flipdisc.animations.params import Param
+from flipdisc.animations.viewport import Viewport
 from flipdisc.clips.importer import create_clip_from_animation
 from flipdisc.clips.loader import ClipData, list_clips, load_clip
 
@@ -116,7 +117,7 @@ def test_list_clips(tmp_path):
 
 
 def test_importer_create_clip_from_animation(tmp_path):
-    anim = BouncingDot(56, 7)
+    anim = BouncingDot(Viewport(56, 7))
     out = tmp_path / "dot.gif"
     create_clip_from_animation(anim, n_frames=20, dt=0.05, output_path=out)
 
@@ -179,7 +180,7 @@ def test_clip_animation_configure(monkeypatch):
         "flipdisc.animations.clip.load_clip", _mock_load_clip(clip_data)
     )
 
-    anim = ClipAnimation(56, 7)
+    anim = ClipAnimation(Viewport(56, 7))
     anim.configure(name="test")
 
     assert anim._clip is clip_data
@@ -194,7 +195,7 @@ def test_clip_animation_render_shape(monkeypatch):
         "flipdisc.animations.clip.load_clip", _mock_load_clip(clip_data)
     )
 
-    anim = ClipAnimation(56, 7)
+    anim = ClipAnimation(Viewport(56, 7))
     anim.configure(name="test")
     frame = anim.render_gray()
 
@@ -203,7 +204,7 @@ def test_clip_animation_render_shape(monkeypatch):
 
 
 def test_clip_animation_no_clip_returns_zeros():
-    anim = ClipAnimation(56, 7)
+    anim = ClipAnimation(Viewport(56, 7))
     frame = anim.render_gray()
     assert frame.shape == (7, 56)
     assert frame.sum() == 0.0
@@ -215,7 +216,7 @@ def test_clip_animation_step_advances(monkeypatch):
         "flipdisc.animations.clip.load_clip", _mock_load_clip(clip_data)
     )
 
-    anim = ClipAnimation(56, 7)
+    anim = ClipAnimation(Viewport(56, 7))
     anim.configure(name="test", fps_override=10.0)
     anim.step(1.0)
     assert anim._frame_idx == pytest.approx(10.0)
@@ -227,7 +228,7 @@ def test_clip_animation_loops(monkeypatch):
         "flipdisc.animations.clip.load_clip", _mock_load_clip(clip_data)
     )
 
-    anim = ClipAnimation(56, 7)
+    anim = ClipAnimation(Viewport(56, 7))
     anim.configure(name="test", fps_override=10.0, loop=True)
     anim.step(1.5)  # 15 frames -> wraps to 5
     assert anim._frame_idx == pytest.approx(5.0)
@@ -240,7 +241,7 @@ def test_clip_animation_no_loop_completes(monkeypatch):
         "flipdisc.animations.clip.load_clip", _mock_load_clip(clip_data)
     )
 
-    anim = ClipAnimation(56, 7)
+    anim = ClipAnimation(Viewport(56, 7))
     anim.configure(name="test", fps_override=10.0, loop=False)
     anim.step(2.0)  # 20 frames > 10 -> clamps
     assert anim.is_complete()
@@ -253,7 +254,7 @@ def test_clip_animation_reset(monkeypatch):
         "flipdisc.animations.clip.load_clip", _mock_load_clip(clip_data)
     )
 
-    anim = ClipAnimation(56, 7)
+    anim = ClipAnimation(Viewport(56, 7))
     anim.configure(name="test")
     anim.step(0.5)
     anim.reset()
@@ -262,7 +263,7 @@ def test_clip_animation_reset(monkeypatch):
 
 
 def test_clip_animation_processing_steps_none():
-    anim = ClipAnimation(56, 7)
+    anim = ClipAnimation(Viewport(56, 7))
     assert anim.processing_steps is None
 
 
@@ -306,14 +307,14 @@ def test_blit_region_negative_offset():
 
 
 def test_composed_animation_empty():
-    anim = ComposedAnimation(56, 7)
+    anim = ComposedAnimation(Viewport(56, 7))
     frame = anim.render_gray()
     assert frame.shape == (7, 56)
     assert frame.sum() == 0.0
 
 
 def test_composed_animation_two_layers():
-    anim = ComposedAnimation(56, 7)
+    anim = ComposedAnimation(Viewport(56, 7))
     anim.configure(
         layers=[
             {
@@ -340,7 +341,7 @@ def test_composed_animation_two_layers():
 
 
 def test_composed_animation_step_calls_layers():
-    anim = ComposedAnimation(56, 7)
+    anim = ComposedAnimation(Viewport(56, 7))
     anim.configure(
         layers=[
             {
@@ -359,7 +360,7 @@ def test_composed_animation_step_calls_layers():
 
 
 def test_composed_animation_dotted_key_update():
-    anim = ComposedAnimation(56, 7)
+    anim = ComposedAnimation(Viewport(56, 7))
     anim.configure(
         layers=[
             {
@@ -379,7 +380,7 @@ def test_composed_animation_dotted_key_update():
 
 
 def test_composed_animation_unknown_layer_id_is_noop():
-    anim = ComposedAnimation(56, 7)
+    anim = ComposedAnimation(Viewport(56, 7))
     anim.configure(
         layers=[
             {
@@ -397,12 +398,12 @@ def test_composed_animation_unknown_layer_id_is_noop():
 
 
 def test_composed_animation_processing_steps_none():
-    anim = ComposedAnimation(56, 7)
+    anim = ComposedAnimation(Viewport(56, 7))
     assert anim.processing_steps is None
 
 
 def test_composed_animation_reset():
-    anim = ComposedAnimation(56, 7)
+    anim = ComposedAnimation(Viewport(56, 7))
     anim.configure(
         layers=[
             {
@@ -426,9 +427,9 @@ def test_composed_animation_reset():
 
 
 def test_composed_compose_method():
-    anim = ComposedAnimation(56, 7)
-    dot1 = BouncingDot(28, 7)
-    dot2 = BouncingDot(28, 7)
+    anim = ComposedAnimation(Viewport(56, 7))
+    dot1 = BouncingDot(Viewport(28, 7))
+    dot2 = BouncingDot(Viewport(28, 7))
     anim.compose(
         [
             (dot1, {"id": "left", "x": 0, "y": 0}),
@@ -445,7 +446,7 @@ def test_composed_compose_method():
 
 
 def test_composed_compose_replaces_layers():
-    anim = ComposedAnimation(56, 7)
+    anim = ComposedAnimation(Viewport(56, 7))
     anim.configure(
         layers=[
             {
@@ -460,7 +461,7 @@ def test_composed_compose_replaces_layers():
     )
     assert len(anim._layers) == 1
 
-    anim.compose([(BouncingDot(56, 7), {"id": "new", "x": 0, "y": 0})])
+    anim.compose([(BouncingDot(Viewport(56, 7)), {"id": "new", "x": 0, "y": 0})])
     assert len(anim._layers) == 1
     assert anim._layers[0].id == "new"
 
@@ -470,9 +471,9 @@ def test_composed_subclass_pattern():
 
     @register_animation("_test_composed_sub")
     class _TestScene(ComposedAnimation):
-        def __init__(self, width, height):
-            super().__init__(width, height)
-            dot = BouncingDot(28, 7)
+        def __init__(self, viewport):
+            super().__init__(viewport)
+            dot = BouncingDot(self.viewport.region(28, 7))
             self.compose([(dot, {"id": "dot", "x": 0, "y": 0})])
 
         PARAMS = (Param("speed_x", float, 20.0),)
@@ -482,7 +483,7 @@ def test_composed_subclass_pattern():
                 self._update_layer("dot", {"speed_x": params["speed_x"]})
             super().on_configure(**params)
 
-    scene = get_animation("_test_composed_sub", 56, 7)
+    scene = get_animation("_test_composed_sub", Viewport(56, 7))
     assert len(scene._layers) == 1
     scene.configure(speed_x=3)
     assert scene._layers[0].anim.params.get("speed_x") == 3
@@ -496,7 +497,7 @@ def test_composed_subclass_pattern():
 
 
 def test_composed_blend_over_overwrites():
-    anim = ComposedAnimation(56, 7)
+    anim = ComposedAnimation(Viewport(56, 7))
     anim.configure(
         layers=[
             {
@@ -522,7 +523,7 @@ def test_composed_blend_over_overwrites():
 
 
 def test_composed_blend_add_via_json():
-    anim = ComposedAnimation(56, 7)
+    anim = ComposedAnimation(Viewport(56, 7))
     anim.configure(
         layers=[
             {
@@ -540,7 +541,7 @@ def test_composed_blend_add_via_json():
 
 
 def test_composed_blend_add_via_dotted_key():
-    anim = ComposedAnimation(56, 7)
+    anim = ComposedAnimation(Viewport(56, 7))
     anim.configure(
         layers=[
             {
@@ -560,11 +561,11 @@ def test_composed_blend_add_via_dotted_key():
 
 def test_composed_blend_add_result():
     """Both layers on — result should have pixels from both."""
-    anim = ComposedAnimation(56, 7)
-    dot1 = BouncingDot(56, 7)
+    anim = ComposedAnimation(Viewport(56, 7))
+    dot1 = BouncingDot(Viewport(56, 7))
     dot1.x, dot1.y = 0, 0
 
-    dot2 = BouncingDot(56, 7)
+    dot2 = BouncingDot(Viewport(56, 7))
     dot2.x, dot2.y = 10, 0
 
     anim.compose(
@@ -584,7 +585,7 @@ def test_composed_blend_add_result():
 
 
 def test_composed_layer_visible_default():
-    anim = ComposedAnimation(56, 7)
+    anim = ComposedAnimation(Viewport(56, 7))
     anim.configure(
         layers=[
             {
@@ -601,7 +602,7 @@ def test_composed_layer_visible_default():
 
 
 def test_composed_layer_visible_false_via_json():
-    anim = ComposedAnimation(56, 7)
+    anim = ComposedAnimation(Viewport(56, 7))
     anim.configure(
         layers=[
             {
@@ -621,8 +622,8 @@ def test_composed_layer_visible_false_via_json():
 
 
 def test_composed_layer_visible_toggle_via_dotted_key():
-    anim = ComposedAnimation(56, 7)
-    dot = BouncingDot(56, 7)
+    anim = ComposedAnimation(Viewport(56, 7))
+    dot = BouncingDot(Viewport(56, 7))
     dot.x, dot.y = 5, 3
     anim.compose([(dot, {"id": "dot", "x": 0, "y": 0})])
 
@@ -646,7 +647,7 @@ def test_composed_layer_visible_toggle_via_dotted_key():
 
 
 def test_image_animation_no_src_returns_zeros():
-    anim = ImageAnimation(56, 7)
+    anim = ImageAnimation(Viewport(56, 7))
     frame = anim.render_gray()
     assert frame.shape == (7, 56)
     assert frame.sum() == 0.0
@@ -658,7 +659,7 @@ def test_image_animation_configure_src(tmp_path):
     png_path = tmp_path / "white.png"
     Image.fromarray((img * 255).astype(np.uint8)).save(png_path)
 
-    anim = ImageAnimation(56, 7)
+    anim = ImageAnimation(Viewport(56, 7))
     anim.configure(src=str(png_path))
     assert anim._frame is not None
     assert anim._frame.shape == (7, 56)
@@ -669,7 +670,7 @@ def test_image_animation_render_shape(tmp_path):
     png_path = tmp_path / "white.png"
     Image.fromarray((img * 255).astype(np.uint8)).save(png_path)
 
-    anim = ImageAnimation(56, 7)
+    anim = ImageAnimation(Viewport(56, 7))
     anim.configure(src=str(png_path))
     frame = anim.render_gray()
     assert frame.shape == (7, 56)
@@ -677,11 +678,11 @@ def test_image_animation_render_shape(tmp_path):
 
 
 def test_image_animation_step_advances_time():
-    anim = ImageAnimation(56, 7)
+    anim = ImageAnimation(Viewport(56, 7))
     anim.step(0.1)
     assert anim.current_time == pytest.approx(0.1)
 
 
 def test_image_animation_processing_steps():
-    anim = ImageAnimation(56, 7)
+    anim = ImageAnimation(Viewport(56, 7))
     assert anim.processing_steps == ("binarize",)

@@ -4,11 +4,12 @@ import numpy as np
 import pytest
 
 from flipdisc.animations.rain_splash import RainSplash
+from flipdisc.animations.viewport import Viewport
 
 
 def _quiet(width: int = 28, height: int = 28) -> RainSplash:
     """An animation with no random drops, for placing splashes by hand."""
-    anim = RainSplash(width, height)
+    anim = RainSplash(Viewport(width, height))
     anim.configure(drops_per_second=0)
     return anim
 
@@ -20,7 +21,7 @@ def _lit(anim: RainSplash) -> set[tuple[int, int]]:
 
 def test_render_shape_and_values():
     np.random.seed(0)
-    anim = RainSplash(28, 28)
+    anim = RainSplash(Viewport(28, 28))
     for _ in range(40):
         anim.step(0.05)
         frame = anim.render_gray()
@@ -72,7 +73,7 @@ def test_big_ring_surrounds_the_splash():
 
 def test_ring_sizes_follow_the_requested_distribution():
     np.random.seed(1)
-    anim = RainSplash(28, 28)
+    anim = RainSplash(Viewport(28, 28))
     anim.configure(big_drop_chance=0, ring_size=5, ring_size_spread=1.5)
     for _ in range(500):
         anim._spawn()
@@ -83,7 +84,7 @@ def test_ring_sizes_follow_the_requested_distribution():
 
 def test_big_drops_make_bigger_rings_on_average():
     np.random.seed(2)
-    anim = RainSplash(28, 28)
+    anim = RainSplash(Viewport(28, 28))
     anim.configure(big_drop_chance=0.5)
     for _ in range(500):
         anim._spawn()
@@ -101,7 +102,7 @@ def test_no_rain_stays_blank():
 
 def test_drop_rate_controls_how_many_splashes_start():
     np.random.seed(3)
-    anim = RainSplash(28, 28)
+    anim = RainSplash(Viewport(28, 28))
     anim.configure(drops_per_second=10, ring_size=30)  # rings outlive the run
     for _ in range(100):  # 5 seconds
         anim.step(0.05)
@@ -118,7 +119,7 @@ def test_reset_clears_ripples():
 @pytest.mark.parametrize(("width", "height"), [(7, 7), (14, 7), (28, 7), (1, 1)])
 def test_other_sizes(width, height):
     np.random.seed(4)
-    anim = RainSplash(width, height)
+    anim = RainSplash(Viewport(width, height))
     anim.configure(drops_per_second=20, big_drop_chance=0.5)
     for _ in range(40):
         anim.step(0.05)
