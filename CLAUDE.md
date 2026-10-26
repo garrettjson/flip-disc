@@ -83,6 +83,7 @@ Run everything **from the repo root** — fonts, clips, and config are loaded vi
 - Format: `uv run ruff format`
 - Server: `uv run python -m flipdisc run-server --config config.toml` (add `--reload` for hot reload); UI at `http://localhost:8000/ui`, OpenAPI at `/docs`
 - Terminal preview: `uv run python -m flipdisc preview -a <name> -n 5` (`--list` for names; default params only; steps at the config's `refresh_rate`, like the display)
+- Font reference images: `uv run python -m flipdisc.tools.font_images` redraws `assets/text/font_sizes.png` and `font_specimen.png`; run it after changing a font or how text or the clock is set (`test_font_images.py` fails until you do)
 
 Before calling a change done: run the tests, run `ruff check` and `ruff format --check` (both are clean repo-wide), and for anything visual look at actual frames (see Debugging below).
 
@@ -102,8 +103,9 @@ Before calling a change done: run the tests, run `ruff check` and `ruff format -
 - `flipdisc/config.py` — TOML config; `DisplayConfig.width/height` are derived properties (not settable)
 - `flipdisc/app.py`, `flipdisc/cli.py` — wiring and `run-server` / `preview` subcommands
 - `flipdisc/exceptions.py` — `FlipDiscError` hierarchy
+- `flipdisc/tools/` — dev tools that run the app's code, not imported by the server: `font_images` (the font reference PNGs)
 - `flipdisc/tests/` — pytest tests
-- `assets/text/` — BDF fonts, a folder per family (`spleen/`, `x11/`) + `fonts.toml`; `assets/images/weather/` — weather icon BMPs; `assets/clips/clips.toml` — clip manifest (currently empty)
+- `assets/text/` — BDF fonts, a folder per family (`spleen/`, `x11/`) + `fonts.toml`, and the generated reference images `font_sizes.png` and `font_specimen.png`; `assets/images/weather/` — weather icon BMPs; `assets/clips/clips.toml` — clip manifest (currently empty)
 
 ### Pipeline
 

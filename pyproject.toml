@@ -52,6 +52,7 @@ allowed-confusables = ["×", "–"]
 "tests/**/*" = ["T201", "T203"]
 "**/cli.py" = ["T201"]
 "**/gfx/terminal.py" = ["T201"]  # printing frames is its purpose
+"**/tools/*.py" = ["T201"]  # command-line tools report what they did
 
 [tool.ruff.format]
 # Code examples in the docs keep their hand-aligned comments

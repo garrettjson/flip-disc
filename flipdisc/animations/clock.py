@@ -78,9 +78,7 @@ class ClockAnimation(Animation):
         minute_str = now.strftime("%M")
 
         canvas = np.zeros((self.height, self.width), dtype=np.float32)
-        family = load_family(self.params["font"])
-        target = self.scale.text(self.params["size"])
-        font = family.fit(target, lambda f: self._fits(f, gap=0))
+        font = self._font()
         if font is None:
             return canvas
 
@@ -106,6 +104,13 @@ class ClockAnimation(Animation):
         left += colon.shape[1] + gap
         draw.image(canvas, font.render_line(minute_str), left, top)
         return canvas
+
+    def _font(self) -> BitmapFont | None:
+        """The size of ``font`` nearest ``size`` on this display that fits
+        HH:MM, or a smaller one; None if none does."""
+        family = load_family(self.params["font"])
+        target = self.scale.text(self.params["size"])
+        return family.fit(target, lambda f: self._fits(f, gap=0))
 
     @staticmethod
     def _colon_gap(font: BitmapFont) -> int:

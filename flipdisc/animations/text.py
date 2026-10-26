@@ -21,7 +21,7 @@ from .params import Param
 from .viewport import Viewport
 
 _MODES = ("static", "scroll_left", "scroll_up", "scroll_down")
-_LINE_GAP = 1  # blank rows between wrapped lines
+LINE_GAP = 1  # blank rows between wrapped lines
 
 
 def _margin(font: BitmapFont) -> int:
@@ -99,7 +99,7 @@ class TextAnimation(Animation):
         if mode == "scroll_left":
             self._speed_scale = font.advance / design.advance
         else:
-            self._speed_scale = (font.height + _LINE_GAP) / (design.height + _LINE_GAP)
+            self._speed_scale = (font.height + LINE_GAP) / (design.height + LINE_GAP)
 
         self._font = font
         self._margin = _margin(font)
@@ -107,10 +107,10 @@ class TextAnimation(Animation):
         if mode in {"static", "scroll_left"}:
             self._text_image = font.render_line(text)
         elif mode == "scroll_up":
-            self._text_image = font.render_wrapped(text, wrap_width, _LINE_GAP)
+            self._text_image = font.render_wrapped(text, wrap_width, LINE_GAP)
         else:
             reversed_text = " ".join(reversed(text.split()))
-            self._text_image = font.render_wrapped(reversed_text, wrap_width, _LINE_GAP)
+            self._text_image = font.render_wrapped(reversed_text, wrap_width, LINE_GAP)
 
     @override
     def step(self, dt: float) -> None:

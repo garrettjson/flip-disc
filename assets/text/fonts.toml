@@ -3,6 +3,10 @@
 # flipdisc/fonts/font.py). Sizes are BDF files, relative to this directory;
 # add one with flipdisc/fonts/importer.py. The default family is
 # DEFAULT_FAMILY in flipdisc/fonts/loader.py.
+#
+# font_sizes.png and font_specimen.png, next to this file, show every size
+# and how each family sets the clock and text on a few display sizes. They
+# are generated: `uv run python -m flipdisc.tools.font_images`.
 
 [spleen]
 # Spleen (BSD licence, spleen/LICENSE), and below its smallest size a 3x5

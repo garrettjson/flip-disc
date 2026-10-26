@@ -95,6 +95,20 @@ Sizes are [BDF](https://en.wikipedia.org/wiki/Glyph_Bitmap_Distribution_Format) 
 uv run python -m flipdisc.fonts.importer ~/Downloads/7x14.bdf assets/text/x11/7x14.bdf
 ```
 
+Every drawn size, at the same dot size:
+
+![Every size of each font family](assets/text/font_sizes.png)
+
+The clock and a page of text as each family sets them on 28, 56 and 126 dot displays. Each display is drawn the same width, so a 56 display's dots look half the size of a 28's:
+
+![The clock and text in each family on three display sizes](assets/text/font_specimen.png)
+
+Both images are drawn by the code from the real animations. After changing a font or how text is set, regenerate them (a test fails until you do):
+
+```bash
+uv run python -m flipdisc.tools.font_images
+```
+
 
 ## Project Layout
 
@@ -107,7 +121,7 @@ flip-disc/
 │  ├─ architecture.md         # How the implementation works, end to end
 │  └─ hardware.md             # AlfaZeta panel reference (wiring, DIP switches, protocol)
 ├─ assets/
-│  ├─ text/                   # Bitmap fonts (BDF), one folder per source, + fonts.toml
+│  ├─ text/                   # Bitmap fonts (BDF), one folder per family, fonts.toml, reference PNGs
 │  ├─ images/weather/         # Weather icon BMPs
 │  └─ clips/clips.toml        # Clip manifest (GIF frame sequences)
 └─ flipdisc/
@@ -143,6 +157,7 @@ flip-disc/
    │  ├─ postprocessing.py    # Binarize, dither, blur, sharpen, threshold, downsample
    │  └─ terminal.py          # Print frames in the terminal for debugging
    ├─ web/                    # FastAPI endpoints, WebSocket preview, web UI
+   ├─ tools/                  # Dev tools: font_images draws the font reference PNGs
    └─ tests/                  # pytest tests
 ```
 
