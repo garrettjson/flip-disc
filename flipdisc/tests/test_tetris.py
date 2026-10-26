@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from flipdisc.animations.viewport import Viewport
 from flipdisc.games.tetris import _KINDS, Tetris, _State, fall_speed
 
 DT = 0.05  # 20 fps
@@ -22,7 +23,7 @@ def _steps(game: Tetris, seconds: float) -> None:
 def _game(kind: str = "T", **params) -> Tetris:
     """A game in play with a ``kind`` piece just spawned."""
     np.random.seed(0)
-    game = Tetris(28, 28)
+    game = Tetris(Viewport(28, 28))
     if params:
         game.configure(**params)
         game.reset()
@@ -38,7 +39,7 @@ def _cells(game: Tetris) -> set[tuple[int, int]]:
 
 def test_waits_with_the_first_piece_at_the_top():
     np.random.seed(0)
-    game = Tetris(28, 28)
+    game = Tetris(Viewport(28, 28))
     start = _cells(game)
     assert min(y for _, y in start) == 0
     _steps(game, 3)
@@ -48,7 +49,7 @@ def test_waits_with_the_first_piece_at_the_top():
 
 def test_any_control_starts_and_counts():
     np.random.seed(0)
-    game = Tetris(28, 28)
+    game = Tetris(Viewport(28, 28))
     x = game.x
     _tap(game, "left")
     assert game._state is _State.PLAYING
@@ -87,7 +88,7 @@ def test_start_level_sets_the_speed():
 
 def test_start_level_applies_before_the_first_move_only():
     np.random.seed(0)
-    game = Tetris(28, 28)
+    game = Tetris(Viewport(28, 28))
     game.configure(start_level=3)
     assert game.level == 3
     _tap(game, "left")
@@ -263,7 +264,7 @@ def test_four_rows_at_once_score_eight():
 
 def test_pieces_come_in_bags_of_all_seven():
     np.random.seed(3)
-    game = Tetris(28, 28)
+    game = Tetris(Viewport(28, 28))
     game._bag = []
     dealt = [game._deal() for _ in range(14)]
     assert sorted(dealt[:7]) == sorted(_KINDS)
@@ -322,7 +323,7 @@ def test_layout_border_next_piece_and_stats():
 @pytest.mark.parametrize(("width", "height"), [(7, 7), (14, 7), (28, 7), (28, 28)])
 def test_render_at_other_sizes(width, height):
     np.random.seed(0)
-    game = Tetris(width, height)
+    game = Tetris(Viewport(width, height))
     for i in range(200):
         _tap(game, ("left", "rotate", "right", "drop")[i % 4])
         game.step(DT)

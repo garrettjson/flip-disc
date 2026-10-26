@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from flipdisc.animations.base import _ANIMATION_REGISTRY
+from flipdisc.animations.viewport import Viewport
 from flipdisc.config import DisplayConfig
 from flipdisc.engine.pipeline import DisplayPipeline
 from flipdisc.exceptions import AnimationError
@@ -24,9 +25,9 @@ class _Cursor(Game):
         Control("right", "Move right", keys=("ArrowRight",)),
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height)
-        self.x = width // 2
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport)
+        self.x = self.width // 2
         self.steps = 0
         self.events: list[tuple[str, str]] = []
 
@@ -62,7 +63,7 @@ def cursor_registered(monkeypatch):
 
 
 def test_press_and_release_reach_the_game_once_each():
-    game = _Cursor(28, 28)
+    game = _Cursor(Viewport(28, 28))
     game.handle_input("right", True)
     game.handle_input("right", True)  # keyboard auto-repeat: still held
     assert game.held == {"right"}
@@ -74,11 +75,11 @@ def test_press_and_release_reach_the_game_once_each():
 
 def test_unknown_action_is_rejected():
     with pytest.raises(AnimationError, match="left, right"):
-        _Cursor(28, 28).handle_input("jump", True)
+        _Cursor(Viewport(28, 28)).handle_input("jump", True)
 
 
 def test_reset_lets_go_of_held_actions():
-    game = _Cursor(28, 28)
+    game = _Cursor(Viewport(28, 28))
     game.handle_input("left", True)
     game.reset()
     assert game.held == set()

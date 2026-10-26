@@ -10,6 +10,7 @@ from flipdisc.clips.loader import ClipData, list_clips, load_clip
 
 from .base import Animation, register_animation
 from .params import Param
+from .viewport import Viewport
 
 
 def _blit_fit(canvas: np.ndarray, src: np.ndarray, mode: str) -> None:
@@ -110,8 +111,8 @@ class ClipAnimation(Animation):
         Param("fit_mode", str, "fit", choices=_FIT_MODES),
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=None)
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=None)
         self._clip: ClipData | None = None
         # The clip's frames as they will be drawn, shrunk in "fit" mode
         self._frames: np.ndarray | None = None

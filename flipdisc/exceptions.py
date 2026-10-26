@@ -23,3 +23,7 @@ class AnimationError(FlipDiscError):
 
 class FrameError(FlipDiscError):
     """Raised when frame operations fail."""
+
+
+class FontError(FlipDiscError):
+    """Raised when a font file can't be read."""

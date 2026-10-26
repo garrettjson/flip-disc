@@ -33,6 +33,7 @@ import numpy as np
 from ..base import Animation, register_animation
 from ..cadence import Cadence
 from ..params import Param
+from ..viewport import Viewport
 
 # Indices of the bars an operation touched
 type Highlight = tuple[int, ...]
@@ -87,8 +88,8 @@ class SortAnimation(Animation):
         Param("highlight", str, "invert", choices=_HIGHLIGHTS),
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=None)
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=None)
         self._cadence = Cadence()
         self._restart()
 

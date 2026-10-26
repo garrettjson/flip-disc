@@ -5,9 +5,9 @@ register with @register_animation. The API then starts it by name::
 
     @register_animation("weather_dashboard")
     class WeatherDashboard(ComposedAnimation):
-        def __init__(self, width, height):
-            super().__init__(width, height)
-            temp = TextAnimation(41, 7)
+        def __init__(self, viewport):
+            super().__init__(viewport)
+            temp = TextAnimation(self.viewport.region(41, 7))
             temp.configure(text="--", mode="static")
             self.compose(
                 [
@@ -32,10 +32,12 @@ from typing import Any, override
 import numpy as np
 
 from flipdisc.exceptions import AnimationError
+from flipdisc.gfx import draw
 from flipdisc.gfx.postprocessing import apply_processing_pipeline
 
 from .base import Animation, get_animation, register_animation, validate_params
 from .params import Param
+from .viewport import Viewport
 
 # Layer fields managed directly on _Layer (not forwarded to sub-animation)
 _LAYER_FIELDS = frozendict(
@@ -54,22 +56,6 @@ def _validate_layer_spec(spec: Any) -> None:
     for name, param in _LAYER_FIELDS.items():
         if name in spec:
             param.coerce(spec[name])
-
-
-def _blit_region(canvas: np.ndarray, src: np.ndarray, x: int, y: int) -> None:
-    """Blit ``src`` onto ``canvas`` at (x, y) using "over" mode, clipping to bounds."""
-    ch, cw = canvas.shape
-    sh, sw = src.shape
-    src_y0 = max(0, -y)
-    src_x0 = max(0, -x)
-    dst_y0 = max(0, y)
-    dst_x0 = max(0, x)
-    dst_y1 = min(ch, y + sh)
-    dst_x1 = min(cw, x + sw)
-    src_y1 = src_y0 + (dst_y1 - dst_y0)
-    src_x1 = src_x0 + (dst_x1 - dst_x0)
-    if dst_y0 < dst_y1 and dst_x0 < dst_x1:
-        canvas[dst_y0:dst_y1, dst_x0:dst_x1] = src[src_y0:src_y1, src_x0:src_x1]
 
 
 @dataclass
@@ -111,7 +97,7 @@ class ComposedAnimation(Animation):
                     "y": 0,
                     "width": 41,
                     "height": 7,
-                    "params": {"text": "72F", "mode": "static", "font": "compact"},
+                    "params": {"text": "72F", "mode": "static", "size": 5},
                 },
             ]
         }
@@ -127,8 +113,8 @@ class ComposedAnimation(Animation):
     # Subclasses that wire their layers in __init__ replace this with their own
     PARAMS = (Param("layers", list, None, nullable=True),)
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=None)
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=None)
         self._layers: list[_Layer] = []
 
     # ------------------------------------------------------------------
@@ -214,25 +200,14 @@ class ComposedAnimation(Animation):
                 layer.anim.render_gray(), layer.anim.processing_steps
             ).astype(np.float32)
 
-            # Clip destination and source regions to canvas bounds once
-            dy0 = max(0, layer.y)
-            dx0 = max(0, layer.x)
-            dy1 = min(self.height, layer.y + layer.height)
-            dx1 = min(self.width, layer.x + layer.width)
-            sy0 = dy0 - layer.y
-            sx0 = dx0 - layer.x
-            sy1 = sy0 + (dy1 - dy0)
-            sx1 = sx0 + (dx1 - dx0)
-
-            if dy0 >= dy1 or dx0 >= dx1:
+            placed = draw.overlap(canvas, sub.shape, layer.x, layer.y)
+            if placed is None:
                 continue
-
-            dst = canvas[dy0:dy1, dx0:dx1]
-            src = sub[sy0:sy1, sx0:sx1]
+            dst, src = placed
             if layer.blend == "add":
-                np.maximum(dst, src, out=dst)
+                np.maximum(canvas[dst], sub[src], out=canvas[dst])
             else:
-                dst[:] = src
+                canvas[dst] = sub[src]
 
         return canvas
 
@@ -252,7 +227,7 @@ class ComposedAnimation(Animation):
         for lc in layers_config:
             w = int(lc.get("width", self.width))
             h = int(lc.get("height", self.height))
-            anim = get_animation(str(lc["type"]), w, h)
+            anim = get_animation(str(lc["type"]), self.viewport.region(w, h))
             if lc.get("params"):
                 anim.configure(**lc["params"])
             pairs.append((anim, lc))

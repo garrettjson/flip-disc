@@ -3,6 +3,7 @@
 import numpy as np
 
 from flipdisc.animations.precipitation import RainEffect, SnowEffect
+from flipdisc.animations.viewport import Viewport
 from flipdisc.animations.weather import WeatherAnimation
 from flipdisc.animations.weather_icon import _CONDITIONS, WeatherIconAnimation
 
@@ -12,14 +13,14 @@ ALL_CONDITIONS = list(_CONDITIONS)
 class TestWeatherIconAnimation:
     def test_all_conditions_render(self):
         for cond in ALL_CONDITIONS:
-            icon = WeatherIconAnimation(28, 28)
+            icon = WeatherIconAnimation(Viewport(28, 28))
             icon.configure(condition=cond)
             frame = icon.render_gray()
             assert frame.shape == (28, 28)
             assert frame.dtype == np.float32
 
     def test_unknown_condition_falls_back(self):
-        icon = WeatherIconAnimation(28, 28)
+        icon = WeatherIconAnimation(Viewport(28, 28))
         icon.configure(condition="hail")
         frame = icon.render_gray()
         assert frame.shape == (28, 28)
@@ -28,7 +29,7 @@ class TestWeatherIconAnimation:
 
     def test_icon_is_top_right_aligned(self):
         """Icon should be placed top-right, so bottom-left should be mostly dark."""
-        icon = WeatherIconAnimation(28, 28)
+        icon = WeatherIconAnimation(Viewport(28, 28))
         icon.configure(condition="sunny")
         frame = icon.render_gray()
         # Bottom-left 20x8 region should be dark (few or no lit pixels)
@@ -39,19 +40,19 @@ class TestWeatherIconAnimation:
 class TestWeatherAnimation:
     def test_all_conditions_render_without_exception(self):
         for cond in ALL_CONDITIONS:
-            anim = WeatherAnimation(28, 28)
+            anim = WeatherAnimation(Viewport(28, 28))
             anim.configure(temp=72, condition=cond, unit="F")
             frame = anim.render_gray()
             assert frame.shape == (28, 28)
             assert frame.max() >= 0.0
 
     def test_default_renders(self):
-        anim = WeatherAnimation(28, 28)
+        anim = WeatherAnimation(Viewport(28, 28))
         frame = anim.render_gray()
         assert frame.shape == (28, 28)
 
     def test_temp_text_updates(self):
-        anim = WeatherAnimation(28, 28)
+        anim = WeatherAnimation(Viewport(28, 28))
         anim.configure(temp=72, condition="sunny", unit="F")
         frame1 = anim.render_gray()
         anim.configure(temp=55)
@@ -60,7 +61,7 @@ class TestWeatherAnimation:
         assert not np.array_equal(frame1, frame2)
 
     def test_unit_change_rerenders(self):
-        anim = WeatherAnimation(28, 28)
+        anim = WeatherAnimation(Viewport(28, 28))
         anim.configure(temp=22, condition="cloudy", unit="C")
         frame_c = anim.render_gray()
         anim.configure(unit="F")
@@ -69,21 +70,21 @@ class TestWeatherAnimation:
         assert np.array_equal(frame_c, frame_f)
 
     def test_condition_update_does_not_raise(self):
-        anim = WeatherAnimation(28, 28)
+        anim = WeatherAnimation(Viewport(28, 28))
         anim.configure(temp=68, condition="sunny")
         anim.configure(condition="rain")  # should not raise
         frame = anim.render_gray()
         assert frame.shape == (28, 28)
 
     def test_step_does_not_raise(self):
-        anim = WeatherAnimation(28, 28)
+        anim = WeatherAnimation(Viewport(28, 28))
         anim.configure(temp=72, condition="sunny")
         for _ in range(10):
             anim.step(1 / 60)
         anim.render_gray()
 
     def test_params_stored(self):
-        anim = WeatherAnimation(28, 28)
+        anim = WeatherAnimation(Viewport(28, 28))
         anim.configure(temp=72, condition="sunny", unit="F")
         assert anim.params.get("temp") == 72
         assert anim.params.get("condition") == "sunny"
@@ -92,14 +93,14 @@ class TestWeatherAnimation:
 
 class TestMoonPhaseIcon:
     def test_full_moon_has_many_pixels(self):
-        icon = WeatherIconAnimation(28, 28)
+        icon = WeatherIconAnimation(Viewport(28, 28))
         icon.configure(condition="moon", moon_phase=0.5)
         frame = icon.render_gray()
         lit = (frame > 0.5).sum()
         assert lit > 100, f"Full moon should have many lit pixels, got {lit}"
 
     def test_new_moon_shows_thin_crescent(self):
-        icon = WeatherIconAnimation(28, 28)
+        icon = WeatherIconAnimation(Viewport(28, 28))
         icon.configure(condition="moon", moon_phase=0.0)
         frame = icon.render_gray()
         lit = (frame > 0.5).sum()
@@ -107,7 +108,7 @@ class TestMoonPhaseIcon:
         assert 5 < lit < 30, f"New moon should show thin crescent, got {lit}"
 
     def test_full_more_than_quarter(self):
-        icon = WeatherIconAnimation(28, 28)
+        icon = WeatherIconAnimation(Viewport(28, 28))
         icon.configure(condition="moon", moon_phase=0.5)
         full_lit = (icon.render_gray() > 0.5).sum()
 
@@ -120,7 +121,7 @@ class TestMoonPhaseIcon:
 
     def test_first_quarter_right_side_lit(self):
         """First quarter (0.25): right side should be lit, left dark."""
-        icon = WeatherIconAnimation(28, 28)
+        icon = WeatherIconAnimation(Viewport(28, 28))
         icon.configure(condition="moon", moon_phase=0.25)
         frame = icon.render_gray()
         # Split around moon center column (21)
@@ -129,7 +130,7 @@ class TestMoonPhaseIcon:
         assert right > left, f"Right ({right}) should exceed left ({left})"
 
     def test_moon_phase_forwarded_from_weather(self):
-        anim = WeatherAnimation(28, 28)
+        anim = WeatherAnimation(Viewport(28, 28))
         anim.configure(temp=55, condition="moon", moon_phase=0.25)
         icon_layer = None
         for layer in anim._layers:
@@ -140,7 +141,7 @@ class TestMoonPhaseIcon:
         assert icon_layer.anim._moon_phase == 0.25
 
     def test_default_phase_is_full(self):
-        icon = WeatherIconAnimation(28, 28)
+        icon = WeatherIconAnimation(Viewport(28, 28))
         icon.configure(condition="moon")
         assert icon._moon_phase == 0.5
 
@@ -236,17 +237,17 @@ class TestSnowEffect:
 
 class TestSnowWeatherIcon:
     def test_snow_condition_creates_precip(self):
-        icon = WeatherIconAnimation(28, 28)
+        icon = WeatherIconAnimation(Viewport(28, 28))
         icon.configure(condition="snow")
         assert icon._precip is not None
 
     def test_non_snow_condition_no_precip(self):
-        icon = WeatherIconAnimation(28, 28)
+        icon = WeatherIconAnimation(Viewport(28, 28))
         icon.configure(condition="sunny")
         assert icon._precip is None
 
     def test_snow_renders_with_particles(self):
-        icon = WeatherIconAnimation(28, 28)
+        icon = WeatherIconAnimation(Viewport(28, 28))
         icon.configure(condition="snow", spawn_rate=20.0)
         for _ in range(30):
             icon.step(1 / 60)
@@ -256,14 +257,14 @@ class TestSnowWeatherIcon:
         assert frame.sum() > 0
 
     def test_switching_condition_clears_precip(self):
-        icon = WeatherIconAnimation(28, 28)
+        icon = WeatherIconAnimation(Viewport(28, 28))
         icon.configure(condition="snow")
         assert icon._precip is not None
         icon.configure(condition="sunny")
         assert icon._precip is None
 
     def test_snow_params_forwarded_from_weather(self):
-        anim = WeatherAnimation(28, 28)
+        anim = WeatherAnimation(Viewport(28, 28))
         anim.configure(temp=28, condition="snow", spawn_rate=5.0, fall_speed=10.0)
         # Find the icon layer
         icon_layer = None
@@ -375,12 +376,12 @@ class TestRainEffect:
 
 class TestRainWeatherIcon:
     def test_rain_condition_creates_rain_effect(self):
-        icon = WeatherIconAnimation(28, 28)
+        icon = WeatherIconAnimation(Viewport(28, 28))
         icon.configure(condition="rain")
         assert isinstance(icon._precip, RainEffect)
 
     def test_wmo_code_applies_preset(self):
-        icon = WeatherIconAnimation(28, 28)
+        icon = WeatherIconAnimation(Viewport(28, 28))
         icon.configure(condition="rain", wmo_code=65)
         precip = icon._precip
         assert isinstance(precip, RainEffect)
@@ -389,7 +390,7 @@ class TestRainWeatherIcon:
         assert precip._droplet_size == 3
 
     def test_explicit_params_override_preset(self):
-        icon = WeatherIconAnimation(28, 28)
+        icon = WeatherIconAnimation(Viewport(28, 28))
         icon.configure(condition="rain", wmo_code=65, spawn_rate=1.0, droplet_size=1)
         precip = icon._precip
         assert isinstance(precip, RainEffect)
@@ -399,14 +400,14 @@ class TestRainWeatherIcon:
         assert precip._fall_speed == 6.0
 
     def test_switching_condition_clears_precip(self):
-        icon = WeatherIconAnimation(28, 28)
+        icon = WeatherIconAnimation(Viewport(28, 28))
         icon.configure(condition="rain")
         assert icon._precip is not None
         icon.configure(condition="sunny")
         assert icon._precip is None
 
     def test_rain_renders_with_particles(self):
-        icon = WeatherIconAnimation(28, 28)
+        icon = WeatherIconAnimation(Viewport(28, 28))
         icon.configure(condition="rain", spawn_rate=20.0)
         for _ in range(30):
             icon.step(1 / 60)
@@ -415,7 +416,7 @@ class TestRainWeatherIcon:
         assert frame.sum() > 0
 
     def test_default_rain_no_wmo(self):
-        icon = WeatherIconAnimation(28, 28)
+        icon = WeatherIconAnimation(Viewport(28, 28))
         icon.configure(condition="rain")
         precip = icon._precip
         assert isinstance(precip, RainEffect)
@@ -426,7 +427,7 @@ class TestRainWeatherIcon:
 
 class TestRainWeatherAnimation:
     def test_rain_params_forwarded(self):
-        anim = WeatherAnimation(28, 28)
+        anim = WeatherAnimation(Viewport(28, 28))
         anim.configure(
             temp=55, condition="rain", spawn_rate=5.0, fall_speed=18.0, droplet_size=3
         )
@@ -443,7 +444,7 @@ class TestRainWeatherAnimation:
         assert precip._droplet_size == 3
 
     def test_wmo_code_forwarded(self):
-        anim = WeatherAnimation(28, 28)
+        anim = WeatherAnimation(Viewport(28, 28))
         anim.configure(temp=55, condition="rain", wmo_code=82)
         icon_layer = None
         for layer in anim._layers:
@@ -456,3 +457,16 @@ class TestRainWeatherAnimation:
         assert precip._spawn_rate == 2.0
         assert precip._fall_speed == 6.67
         assert precip._droplet_size == 3
+
+
+def test_the_temperature_is_set_in_the_default_size_with_its_degree_sign():
+    anim = WeatherAnimation(Viewport(28, 28))
+    anim.configure(temp=72, override_condition="sunny")
+    (temp,) = [layer for layer in anim._layers if layer.id == "temp"]
+    assert temp.anim._font.name == "spleen/5x8"
+    frame = anim.render_gray()
+    # Digits fill rows 21-26, a row clear of the bottom; the degree sign's
+    # top is 2 rows above theirs, just after the number
+    digits = frame[20:, :11]
+    assert np.flatnonzero(digits.any(axis=1)).tolist() == [1, 2, 3, 4, 5, 6]
+    assert frame[19, 12] == 1 and frame[27].sum() == 0

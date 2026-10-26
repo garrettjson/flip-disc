@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from flipdisc.animations.point_cloud import PointCloud
+from flipdisc.animations.viewport import Viewport
 from flipdisc.exceptions import AnimationError
 
 
@@ -19,7 +20,7 @@ def _radii(anim: PointCloud) -> np.ndarray:
 
 
 def test_render_shape_and_dtype():
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     _settle(anim, 1.0)
     frame = anim.render_gray()
     assert frame.shape == (28, 28)
@@ -28,7 +29,7 @@ def test_render_shape_and_dtype():
 
 
 def test_starts_at_the_centre_and_bursts_out():
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     assert not anim._pos.any()
     assert anim.render_gray().sum() == 1
     _settle(anim, 0.3)
@@ -37,7 +38,7 @@ def test_starts_at_the_centre_and_bursts_out():
 
 def test_settles_onto_the_shell():
     np.random.seed(0)
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     _settle(anim)
     r = _radii(anim)
     inner = 1.0 - anim.params["thickness"]
@@ -46,7 +47,7 @@ def test_settles_onto_the_shell():
 
 
 def test_spins_at_the_requested_speed():
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     anim.configure(spin_speed=0.5)
     _settle(anim, 10.0)
     assert anim._spin_rate == pytest.approx(0.5, rel=1e-2)
@@ -57,7 +58,7 @@ def test_spins_at_the_requested_speed():
 
 
 def test_spin_up_is_gradual():
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     anim.configure(spin_speed=2.0)
     anim.step(0.05)
     assert 0 < anim._spin_rate < 0.2
@@ -65,7 +66,7 @@ def test_spin_up_is_gradual():
 
 def test_fast_spin_bulges_the_equator():
     np.random.seed(0)
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     anim.configure(spin_speed=3.0, thickness=0.0)
     _settle(anim, 10.0)
     equator = np.linalg.norm(anim._pos[:, [0, 2]], axis=1).max()
@@ -76,7 +77,7 @@ def test_fast_spin_bulges_the_equator():
 
 def _heights(concentration: float, at: str) -> np.ndarray:
     np.random.seed(0)
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     anim.configure(
         count=2000, concentration=concentration, concentrate_at=at, thickness=0.0
     )
@@ -107,7 +108,7 @@ def test_concentration_crowds_the_equator():
 
 
 def test_pole_concentration_is_continuous_at_one():
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     anim.configure(concentration=1.0)
     at_one = anim._anchors.copy()
     anim.configure(concentration=1.0001)
@@ -115,7 +116,7 @@ def test_pole_concentration_is_continuous_at_one():
 
 
 def test_switching_direction_keeps_each_dot_in_its_hemisphere():
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     poles = anim._anchors.copy()
     anim.configure(concentrate_at="equator")
     # Dots slide along their meridians: same longitude, same side of the
@@ -128,7 +129,7 @@ def test_switching_direction_keeps_each_dot_in_its_hemisphere():
 
 
 def test_thickness_fills_the_ball():
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     anim.configure(thickness=1.0, count=1000)
     r = np.linalg.norm(anim._anchors, axis=1)
     assert r.min() < 0.3
@@ -136,13 +137,13 @@ def test_thickness_fills_the_ball():
 
 
 def test_count_scales_with_display_area():
-    small = PointCloud(28, 28)
-    large = PointCloud(56, 56)
+    small = PointCloud(Viewport(28, 28))
+    large = PointCloud(Viewport(56, 56))
     assert len(large._pos) == pytest.approx(4 * len(small._pos), rel=0.01)
 
 
 def test_count_overrides_density():
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     anim.configure(count=40)
     assert len(anim._pos) == 40
     anim.configure(density=2.0)
@@ -150,7 +151,7 @@ def test_count_overrides_density():
 
 
 def test_changing_count_keeps_existing_dots():
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     _settle(anim, 2.0)
     before = anim._pos[:50].copy()
     anim.configure(count=50)
@@ -161,7 +162,7 @@ def test_changing_count_keeps_existing_dots():
 
 
 def test_changing_shape_moves_anchors_not_dots():
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     _settle(anim, 2.0)
     pos = anim._pos.copy()
     anchors = anim._anchors.copy()
@@ -172,7 +173,7 @@ def test_changing_shape_moves_anchors_not_dots():
 
 def test_jitter_wanders_around_the_shell():
     np.random.seed(0)
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     anim.configure(jitter=1.0, thickness=0.0)
     _settle(anim, 10.0)
     offset_px = (_radii(anim) - 1.0) * anim._radius_px()
@@ -189,7 +190,7 @@ def test_jitter_wanders_around_the_shell():
     ],
 )
 def test_extremes_stay_finite(params):
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     anim.configure(**params)
     _settle(anim, 5.0, dt=0.1)
     assert np.isfinite(anim._pos).all()
@@ -203,13 +204,13 @@ def _top_pole(anim: PointCloud) -> np.ndarray:
 
 
 def test_tilt_brings_the_top_pole_forward():
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     anim.configure(tilt=30)
     assert _top_pole(anim)[2] == pytest.approx(math.sin(math.radians(30)))
 
 
 def test_wobble_circles_the_axis_around_its_tilt():
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     anim.configure(tilt=20, wobble=15, wobble_speed=1.0)
     base = _rot_x_world(20) @ np.array([0.0, -1.0, 0.0])
     poles = []
@@ -231,7 +232,7 @@ def _rot_x_world(tilt_deg: float) -> np.ndarray:
 
 
 def test_no_wobble_means_wobble_speed_does_nothing():
-    a, b = PointCloud(28, 28), PointCloud(28, 28)
+    a, b = PointCloud(Viewport(28, 28)), PointCloud(Viewport(28, 28))
     b._uniforms = a._uniforms.copy()
     b._place_anchors()
     b.configure(wobble_speed=2.5)
@@ -242,7 +243,7 @@ def test_no_wobble_means_wobble_speed_does_nothing():
 
 def test_anchor_velocity_matches_their_motion():
     # The closed-form angular velocity agrees with differencing positions
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     anim.configure(tilt=25, wobble=20, wobble_speed=-1.3, spin_speed=2.0)
     _settle(anim, 5.0)
     h = 1e-6
@@ -255,7 +256,7 @@ def test_anchor_velocity_matches_their_motion():
 
 def test_steady_spin_rides_with_the_anchors():
     np.random.seed(0)
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     anim.configure(spin_speed=2.0, thickness=0.0)
     _settle(anim, 10.0)
     anchors, _ = anim._anchor_state()
@@ -275,7 +276,7 @@ def test_steady_spin_rides_with_the_anchors():
 
 
 def test_reset():
-    anim = PointCloud(28, 28)
+    anim = PointCloud(Viewport(28, 28))
     anim.configure(spin_speed=1.0)
     _settle(anim, 2.0)
     anim.reset(seed=42)
@@ -286,12 +287,12 @@ def test_reset():
 
 def test_unknown_param_is_rejected():
     with pytest.raises(AnimationError):
-        PointCloud(28, 28).configure(radius=0.5)
+        PointCloud(Viewport(28, 28)).configure(radius=0.5)
 
 
 @pytest.mark.parametrize(("w", "h"), [(14, 7), (28, 28), (56, 28), (40, 60)])
 def test_different_sizes(w, h):
-    anim = PointCloud(w, h)
+    anim = PointCloud(Viewport(w, h))
     _settle(anim, 1.0)
     frame = anim.render_gray()
     assert frame.shape == (h, w)

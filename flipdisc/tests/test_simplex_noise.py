@@ -3,6 +3,7 @@
 import numpy as np
 
 from flipdisc.animations.simplex_noise import SimplexNoise
+from flipdisc.animations.viewport import Viewport
 from flipdisc.gfx.noise import permutation, simplex3
 
 
@@ -45,7 +46,7 @@ def _run(anim: SimplexNoise, frames: int, dt: float = 0.05) -> np.ndarray:
 
 
 def test_render_shape_dtype_and_range():
-    frames = _run(SimplexNoise(28, 14), 50)
+    frames = _run(SimplexNoise(Viewport(28, 14)), 50)
     assert frames.shape == (50, 14, 28)
     assert frames.dtype == np.float32
     assert frames.min() >= 0.0
@@ -54,7 +55,7 @@ def test_render_shape_dtype_and_range():
 
 def test_default_look_matches_opensimplex():
     """Blob size and flip rate stay where opensimplex had them (see _FREQUENCY)."""
-    lit = _run(SimplexNoise(28, 28), 400) > 0.5
+    lit = _run(SimplexNoise(Viewport(28, 28)), 400) > 0.5
     neighbors_agree = (
         (lit[:, :, 1:] == lit[:, :, :-1]).mean() + (lit[:, 1:] == lit[:, :-1]).mean()
     ) / 2
@@ -66,7 +67,7 @@ def test_default_look_matches_opensimplex():
 
 
 def test_reset_restarts_and_seed_changes_the_field():
-    anim = SimplexNoise(28, 28)
+    anim = SimplexNoise(Viewport(28, 28))
     first = anim.render_gray()
     _run(anim, 10)
     anim.reset()
@@ -76,7 +77,7 @@ def test_reset_restarts_and_seed_changes_the_field():
 
 
 def test_configure_scale_and_speed():
-    anim = SimplexNoise(28, 28)
+    anim = SimplexNoise(Viewport(28, 28))
     anim.configure(scale=10.0, speed=0.0)
     still = _run(anim, 5)
     assert all(np.array_equal(still[0], f) for f in still)

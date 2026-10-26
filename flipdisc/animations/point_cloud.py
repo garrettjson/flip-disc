@@ -27,6 +27,7 @@ import numpy as np
 
 from .base import Animation, register_animation
 from .params import Param
+from .viewport import Viewport
 
 # Spring stiffness (1/s², per unit mass). Natural frequency sqrt(60) ~ 7.7
 # rad/s, comfortably above the fastest allowed spin: the equator bulges by
@@ -101,12 +102,13 @@ class PointCloud(Animation):
         # and the direction it leans in circles at wobble_speed
         Param("wobble", float, 0.0, min=0, max=45, step=1, unit="°"),
         Param("wobble_speed", float, 0.1, min=-3, max=3, step=0.05, unit="rad/s"),
-        # RMS thermal wander of each dot around its anchor
+        # RMS thermal wander of each dot around its anchor, in dots on the
+        # 28-dot design display
         Param("jitter", float, 0.0, min=0, max=2, step=0.05, unit="px"),
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=None)
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=None)
         self._spin_rate = 0.0
         self._spin_angle = 0.0
         self._wobble_angle = 0.0
@@ -117,7 +119,7 @@ class PointCloud(Animation):
     # ------------------------------------------------------------------
 
     def _radius_px(self) -> float:
-        return self.params["size"] * min(self.width, self.height)
+        return self.params["size"] * self.scale.short_side
 
     def _target_count(self) -> int:
         if self.params["count"] is not None:
@@ -224,8 +226,8 @@ class PointCloud(Animation):
         jitter = self.params["jitter"]
         if jitter > 0:
             # Langevin kicks sized so each dot's RMS offset per axis settles
-            # at `jitter` pixels (fluctuation-dissipation)
-            rms = jitter / self._radius_px()
+            # at `jitter` design dots (fluctuation-dissipation)
+            rms = self.scale.length(jitter) / self._radius_px()
             kick = math.sqrt(2.0 * damping * _STIFFNESS / h) * rms
             accel += np.random.normal(0.0, kick, self._pos.shape)
 

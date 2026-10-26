@@ -14,6 +14,7 @@ from flipdisc.animations import (
 )
 from flipdisc.animations.base import _ANIMATION_REGISTRY
 from flipdisc.animations.params import Param
+from flipdisc.animations.viewport import Viewport
 from flipdisc.config import DisplayConfig
 from flipdisc.engine.pipeline import DisplayPipeline
 from flipdisc.exceptions import AnimationError
@@ -92,7 +93,7 @@ def test_declared_defaults_are_valid_and_applied(name):
     assert validate_params(name, defaults) == defaults
 
     # A new instance starts from them, and re-applying them is accepted
-    anim = get_animation(name, 28, 28)
+    anim = get_animation(name, Viewport(28, 28))
     assert anim.params == defaults
     anim.configure(**{k: v for k, v in defaults.items() if v is not None})
     anim.step(1 / 20)
@@ -114,7 +115,7 @@ def test_unknown_parameter_is_rejected_with_the_valid_names():
 
 
 def test_configure_on_an_instance_validates_and_coerces():
-    anim = get_animation("wireframe_cube", 28, 28)
+    anim = get_animation("wireframe_cube", Viewport(28, 28))
     anim.configure(rotation_speed="2")
     assert anim.rotation_speed == 2.0
     assert anim.params["rotation_speed"] == 2.0
@@ -138,7 +139,7 @@ def test_composed_validates_layer_specs_but_passes_dotted_keys_through():
 
 
 def test_dotted_layer_keys_are_checked_against_the_layer_when_applied():
-    anim = get_animation("weather", 28, 28)
+    anim = get_animation("weather", Viewport(28, 28))
     anim.configure(**{"layer.temp.text": "55"})
     with pytest.raises(AnimationError, match="mode"):
         anim.configure(**{"layer.temp.mode": "sideways"})
@@ -189,7 +190,7 @@ def test_api_serves_the_schema():
         "scroll_up",
         "scroll_down",
     ]
-    assert "standard" in text["font"]["choices"]
+    assert text["font"]["choices"] == ["spleen", "x11"]
     assert text["speed"]["unit"] == "px/s"
 
 

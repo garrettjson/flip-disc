@@ -138,7 +138,7 @@ def test_requests_are_applied_in_order():
         pipeline = await _started("text")
         # Two configures in quick succession: neither may be lost
         await pipeline.configure_animation({"text": "AB", "mode": "static"})
-        await pipeline.configure_animation({"font": "compact"})
+        await pipeline.configure_animation({"size": 5})
         await asyncio.sleep(0.5)
         st = pipeline.get_status()
         assert st.last_error is None

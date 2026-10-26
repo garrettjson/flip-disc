@@ -22,7 +22,6 @@ from . import (
     sandpile,
     simplex_noise,
     sorting,
-    supersampled,
     text,
     weather,
     wireframe_cube,
@@ -37,13 +36,13 @@ from .base import (
 )
 from .cadence import Cadence
 from .params import Param
-from .supersampled import SupersampledAnimation
+from .viewport import Viewport
 
 __all__ = [
     "Animation",
     "Cadence",
     "Param",
-    "SupersampledAnimation",
+    "Viewport",
     "animation_schemas",
     "black_hole",
     "bouncing_balls",
@@ -64,7 +63,6 @@ __all__ = [
     "sandpile",
     "simplex_noise",
     "sorting",
-    "supersampled",
     "text",
     "validate_params",
     "weather",

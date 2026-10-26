@@ -1,15 +1,22 @@
-"""Clock animation — digital or analog display of current system time."""
+"""Clock animation — digital or analog display of current system time.
+
+The digital face is set like text (``text.py``): ``size`` is its height on a
+28-dot display, in the drawn size of ``font`` nearest it that fits.
+"""
 
 from datetime import datetime
 from typing import override
 
 import numpy as np
 
-from flipdisc.fonts.loader import list_fonts, load_font
+from flipdisc.fonts.font import BitmapFont
+from flipdisc.fonts.loader import DEFAULT_FAMILY, list_families, load_family
+from flipdisc.gfx import draw
 
 from .analog_clock import AnalogClockAnimation
 from .base import Animation, register_animation
 from .params import Param
+from .viewport import Viewport
 
 _STYLES = ("digital", "analog")
 
@@ -18,37 +25,33 @@ _STYLES = ("digital", "analog")
 class ClockAnimation(Animation):
     """Unified clock animation with digital and analog styles.
 
-    font, format and blink_colon apply to the digital style only.
+    font, size, format and blink_colon apply to the digital style only.
     """
 
     PARAMS = (
         Param("style", str, "digital", choices=_STYLES),
-        Param("font", str, "standard", choices=list_fonts),
+        Param("font", str, DEFAULT_FAMILY, choices=list_families),
+        Param("size", int, 8, min=5, max=64, unit="px"),
         Param("format", str, "24h", choices=("24h", "12h")),
         Param("blink_colon", bool, False),
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=("binarize",))
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=("binarize",))
 
         self._style = self.params["style"]
 
         # Digital state
-        self._font_name = self.params["font"]
-        self._font = load_font(self._font_name)
         self._format = self.params["format"]
         self._blink_colon = self.params["blink_colon"]
 
         # Analog delegate
-        self._analog = AnalogClockAnimation(width, height)
+        self._analog = AnalogClockAnimation(self.viewport)
 
     @override
     def on_configure(self, **params) -> None:
         if "style" in params:
             self._style = params["style"]
-        if "font" in params:
-            self._font_name = params["font"]
-            self._font = load_font(self._font_name)
         if "format" in params:
             self._format = params["format"]
         if "blink_colon" in params:
@@ -72,39 +75,53 @@ class ClockAnimation(Animation):
             hour_str = (now.strftime("%I").lstrip("0") or "12").zfill(2)
         else:
             hour_str = now.strftime("%H")
-
         minute_str = now.strftime("%M")
 
-        h_img = self._font.render_line(hour_str)
-        m_img = self._font.render_line(minute_str)
-
-        fh = self._font.letter_height
-
-        # 1px-wide colon: two dots with 3px total spacing (2 blank rows between)
-        # When blink_colon is enabled, hide colon on odd seconds
-        colon_visible = not (self._blink_colon and now.second % 2 == 1)
-        colon = np.zeros((fh, 1), dtype=np.float32)
-        if colon_visible:
-            dot1 = max(0, (fh - 3) // 2)
-            dot2 = min(fh - 1, dot1 + 3)
-            colon[dot1, 0] = 1.0
-            colon[dot2, 0] = 1.0
-
-        # Auto-include 1px gap on each side of colon if canvas is wide enough
-        hw = h_img.shape[1]
-        mw = m_img.shape[1]
-        if hw + 1 + mw + 2 <= self.width:  # room for gaps
-            gap = np.zeros((fh, 1), dtype=np.float32)
-            time_img = np.hstack([h_img, gap, colon, gap, m_img])
-        else:
-            time_img = np.hstack([h_img, colon, m_img])
-
         canvas = np.zeros((self.height, self.width), dtype=np.float32)
-        th, tw = time_img.shape
-        y0 = max(0, (self.height - th) // 2)
-        x0 = max(0, (self.width - tw) // 2)
-        y1 = min(self.height, y0 + th)
-        x1 = min(self.width, x0 + tw)
-        canvas[y0:y1, x0:x1] = time_img[: y1 - y0, : x1 - x0]
+        font = self._font()
+        if font is None:
+            return canvas
 
+        # The colon is just its ink, with a gap either side if there's room:
+        # a whole character cell would push the digits apart. A font sets its
+        # colon for text, low beside lowercase letters; between digits it
+        # belongs in the middle of their height, as fonts' raised time colons
+        # are
+        colon = font.get_glyph(":").ink
+        digit_rows = font.baseline - font.cap_top
+        colon_top = font.cap_top + (digit_rows - colon.shape[0]) // 2
+        gap = self._colon_gap(font)
+        gap = gap if self._fits(font, gap) else 0
+        digits = font.measure("00")
+        left = (self.width - self._width(font, gap)) // 2
+        top = font.centre_top(self.height)
+
+        draw.image(canvas, font.render_line(hour_str), left, top)
+        left += digits + gap
+        # When blink_colon is enabled, hide colon on odd seconds
+        if not (self._blink_colon and now.second % 2 == 1):
+            draw.image(canvas, colon, left, top + colon_top)
+        left += colon.shape[1] + gap
+        draw.image(canvas, font.render_line(minute_str), left, top)
         return canvas
+
+    def _font(self) -> BitmapFont | None:
+        """The size of ``font`` nearest ``size`` on this display that fits
+        HH:MM, or a smaller one; None if none does."""
+        family = load_family(self.params["font"])
+        target = self.scale.text(self.params["size"])
+        return family.fit(target, lambda f: self._fits(f, gap=0))
+
+    @staticmethod
+    def _colon_gap(font: BitmapFont) -> int:
+        """Space either side of the colon: a letter's spacing, and half the
+        colon's width again, so a wide colon (X11's) isn't crowded."""
+        return font.spacing + font.get_glyph(":").ink.shape[1] // 2
+
+    @staticmethod
+    def _width(font: BitmapFont, gap: int) -> int:
+        """Width of HH:MM in ``font`` with ``gap`` dots either side of the colon."""
+        return 2 * font.measure("00") + font.get_glyph(":").ink.shape[1] + 2 * gap
+
+    def _fits(self, font: BitmapFont, gap: int) -> bool:
+        return font.height <= self.height and self._width(font, gap) <= self.width

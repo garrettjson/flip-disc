@@ -31,7 +31,7 @@ The display is **28×28**: two AlfaZeta 14x28 XY5 panels stacked vertically, whi
 
 - Config: `panel_type = "28x7"`, `columns = 1`, `rows = 4` → addresses 1–4, top strip first (the DIP address of each strip is not yet confirmed on the hardware)
 - `refresh_rate = 20.0` fps
-- The standard font (5×7px glyphs) renders `"HELLO"` at 29px wide — 1px too wide. Use the **compact font** (3×5px) or keep text short.
+- Text at the default size (Spleen 5×8) fits 5 letters across: `"HELLO"` is 24px wide. Static text, the clock, and scores drop to the 3×5 size when text is too wide; use `size=5` to ask for it directly.
 
 ### Hardware facts (AlfaZeta XY5 panels)
 
@@ -49,6 +49,7 @@ From the manufacturer's manual and protocol sheet; the full reference is `docs/h
 Goals stated by the owner; some are not yet true of the code. Ask before proposing something that contradicts them.
 
 - **The display's frame rate drives the animation.** One presenter tick = one frame requested = the animation advances by one display interval (`step(1 / refresh_rate)`).
+- **Display sizes: 56×56 next, maybe 126 or 140 one day, and code that holds up to about 1024** (October 2026; transport for a display that big is out of scope). A bigger display should show **finer detail while keeping a pixel-art look**, not a zoomed-in copy of the 28×28 version. Every animation is built for a `Viewport` (its box on a display; a layer gets `viewport.region(w, h)`) and has `self.scale` (`flipdisc/animations/scaling.py`), tuned by eye on pendulum and cube at 56 and 126: lengths grow with the display, objects at `factor ** 0.75`, lines at `factor ** 0.25` with fractional widths, text like objects but in a font's drawn sizes, and shapes are drawn crisp with `flipdisc/gfx/draw.py` (see `flipdisc/animations/CLAUDE.md`, "Display sizes"). Hand-drawn content (`weather`) is out of scope.
 - **Plenty of compute headroom.** The target is a Raspberry Pi (model undecided), with heavier simulation-style animations planned. A frame should cost a small fraction of the frame interval (50–100 ms at 10–20 fps), on the Pi, not just on the dev machine (an Intel Mac).
 
 Decisions the owner has made about the refactor (October 2026):
@@ -66,6 +67,8 @@ Decisions the owner has made about the refactor (October 2026):
 - **No JIT.** 3.15's JIT isn't in uv's builds, so using it means building and maintaining our own CPython on the Pi. It's still experimental, and it speeds up Python bytecode, not the numpy code where heavy animations spend their time.
 - **Animations declare their parameters** (type, default, range) so the API validates them and the web UI builds its controls from the schema. Built: see `flipdisc/animations/params.py`.
 - **Keep a frame buffer of about one second**, not a single-frame handoff. (`buffer_duration = 1.0`.) **Games are the exception** (October 2026): input latency matters more than absorbing slow frames, so their frames are made at each tick (`FRAMES_ON_DEMAND`).
+- **Animations are built for a `Viewport`** (October 2026): `__init__(viewport)` replaced `__init__(width, height)` so that a layer knows the display it's on. Its box sets fractions; the display sets every size in design dots (`flipdisc/animations/viewport.py`, `scaling.py`).
+- **Fonts are families of sizes drawn on the dot grid, not outline fonts** (October 2026). A font asked for a height gets the nearest drawn size. The families are `spleen` (the default: Spleen, with a hand-drawn 3×5 below its smallest size) and `x11` (X11's "fixed" fonts). The hand-drawn 5×7 that was the original font was dropped for Spleen's 5×8, which fits a letter more per line on 28 dots. Outline fonts forced to 1-bit were compared side by side: they break up below about 16 dots and look like print rather than pixel art above it. One could still be added to a family as its largest size.
 - Don't make other structural changes to `engine/`, `animations/base.py`, or the API boundary without checking what has been agreed.
 
 ---
@@ -80,6 +83,7 @@ Run everything **from the repo root** — fonts, clips, and config are loaded vi
 - Format: `uv run ruff format`
 - Server: `uv run python -m flipdisc run-server --config config.toml` (add `--reload` for hot reload); UI at `http://localhost:8000/ui`, OpenAPI at `/docs`
 - Terminal preview: `uv run python -m flipdisc preview -a <name> -n 5` (`--list` for names; default params only; steps at the config's `refresh_rate`, like the display)
+- Font reference images: `uv run python -m flipdisc.tools.font_images` redraws `assets/text/font_sizes.png` and `font_specimen.png`; run it after changing a font or how text or the clock is set (`test_font_images.py` fails until you do)
 
 Before calling a change done: run the tests, run `ruff check` and `ruff format --check` (both are clean repo-wide), and for anything visual look at actual frames (see Debugging below).
 
@@ -91,15 +95,17 @@ Before calling a change done: run the tests, run `ruff check` and `ruff format -
 - `flipdisc/animations/` — animation classes + decorator-based registry (see `flipdisc/animations/CLAUDE.md` for the authoring checklist); `sorting/` holds the `sort` animation and one module per algorithm
 - `flipdisc/games/` — interactive games: `Game` (an `Animation` that takes input) and `Control`; games share the animation registry (see `flipdisc/games/CLAUDE.md`)
 - `flipdisc/hardware/` — RS-485 encoding (`spec` -> `formats` -> `protocol`), `panel_map` (canvas -> per-panel bits), `serial` (hardware + mock transports)
-- `flipdisc/gfx/` — `postprocessing` (binarize, dither, blur, sharpen, threshold, downsample), `images` (load a file as a grayscale frame), `noise` (3D simplex noise over a grid), `terminal` (debug frame printing)
+- `flipdisc/gfx/` — `draw` (crisp 1-bit shapes: line, disc, ring, block; and `image`, a clipped paste), `postprocessing` (binarize, dither, blur, sharpen, threshold, downsample), `images` (load a file as a grayscale frame), `noise` (3D simplex noise over a grid), `terminal` (debug frame printing)
 - `flipdisc/web/` — `api_server.py` (FastAPI routes + WebSocket preview + weather fetch loop), `index.html` + `static/` (web UI)
 - `flipdisc/services/` — `weather.py` (Open-Meteo fetch via httpx), `moon_phase.py`
-- `flipdisc/fonts/`, `flipdisc/clips/` — bitmap font loader; GIF clip loader + importer
+- `flipdisc/fonts/` — bitmap fonts: `font` (one drawn size, and the family text picks a size from), `bdf` (reads BDF files), `loader` (families by name), `importer`
+- `flipdisc/clips/` — GIF clip loader + importer
 - `flipdisc/config.py` — TOML config; `DisplayConfig.width/height` are derived properties (not settable)
 - `flipdisc/app.py`, `flipdisc/cli.py` — wiring and `run-server` / `preview` subcommands
 - `flipdisc/exceptions.py` — `FlipDiscError` hierarchy
+- `flipdisc/tools/` — dev tools that run the app's code, not imported by the server: `font_images` (the font reference PNGs)
 - `flipdisc/tests/` — pytest tests
-- `assets/text/` — font sprite sheets + `fonts.toml`; `assets/images/weather/` — weather icon BMPs; `assets/clips/` — clip GIFs + `clips.toml` manifest
+- `assets/text/` — BDF fonts, a folder per family (`spleen/`, `x11/`) + `fonts.toml`, and the generated reference images `font_sizes.png` and `font_specimen.png`; `assets/images/weather/` — weather icon BMPs; `assets/clips/` — clip GIFs + `clips.toml` manifest
 
 ### Pipeline
 
@@ -141,11 +147,11 @@ Registered names: `black_hole`, `bouncing_balls`, `bouncing_dot`, `clip`, `clock
 
 Games (`flipdisc/games/`, listed separately by `GET /animations`): `snake`, `tetris`.
 
-Unregistered building blocks: `SupersampledAnimation` (render at N× and block-average for anti-aliasing), `AnalogClockAnimation` (used by `clock` with `style="analog"`), `WeatherIconAnimation` + `precipitation.py` effects (used by `weather`), `poisson.py` (the pressure solver used by `fluid`).
+Unregistered building blocks: `AnalogClockAnimation` (used by `clock` with `style="analog"`), `WeatherIconAnimation` + `precipitation.py` effects (used by `weather`), `poisson.py` (the pressure solver used by `fluid`).
 
 Interface (`flipdisc/animations/base.py`):
 
-- `__init__(width, height)` — call `super().__init__(width, height, processing_steps=(...))`
+- `__init__(viewport)` — call `super().__init__(viewport, processing_steps=(...))`, which sets `self.viewport` (a `Viewport`: the animation's box on a display), `self.width` / `self.height` (the box), `self.params`, and `self.scale` (a `DisplayScale` for converting design sizes; see "Display sizes" in `flipdisc/animations/CLAUDE.md`). `get_animation(name, viewport)` builds one by name; the pipeline passes `Viewport(cfg.width, cfg.height)`.
 - `step(dt)` — advance by dt seconds; the pipeline passes one display interval (`1 / refresh_rate`), so rates and speeds are in real units per second
 - `render_gray()` -> `np.ndarray` shape `(height, width)`, float32 in [0, 1]
 - `PARAMS` — a tuple of `Param(name, type, default, min=, max=, choices=, unit=, ...)` declaring every parameter (`flipdisc/animations/params.py`). It is the single source for defaults (`self.params` starts from it), validation, and the web UI's controls.
@@ -160,10 +166,10 @@ Interface (`flipdisc/animations/base.py`):
 ```python
 @register_animation("weather_dashboard")
 class WeatherDashboard(ComposedAnimation):
-    def __init__(self, width, height):
-        super().__init__(width, height)
-        temp = TextAnimation(28, 7)
-        temp.configure(text="--", mode="static", font="compact")
+    def __init__(self, viewport):
+        super().__init__(viewport)
+        temp = TextAnimation(self.viewport.region(28, 7))
+        temp.configure(text="--", mode="static", size=5)
         self.compose([(temp, {"id": "temp", "x": 0, "y": 0})])
 
     PARAMS = (Param("temp", int, None, nullable=True),)
@@ -193,7 +199,7 @@ Verified behaviors that are easy to trip over. Delete an entry when you fix it.
 - **Clips are GIFs** listed in `assets/clips/clips.toml` (create with `flipdisc/clips/importer.py`). A clip larger than the display is shrunk to fit it (`fit_mode="fit"`, the default), using the `smoothing` and `coverage` keys of its `clips.toml` entry; store clips at a multiple of the display size so they play well on bigger grids too. The GIFs are gitignored (`assets/clips/*.gif`) and stored outside the repo; the manifest lists `face` (112×112) and `storm` (224×224), both 24 fps loops (`POST /anim/clip {"name": "face"}`); at 20 fps a 24 fps clip skips every sixth frame.
 - **`[weather]` in `config.toml` is not parsed.** The fetch loop only starts via `POST /weather/config` (the web UI does this when you start `weather`).
 - **`GET /images`** globs `assets/images/*.png`; the only images are `assets/images/weather/*.bmp`, so it returns `[]`.
-- **`TextAnimation` fails silently in static mode** when text doesn't fit: `_text_image` is `None`, `_error` holds the reason, and the frame is blank.
+- **`TextAnimation` fails silently in static mode** when text doesn't fit even at its font's smallest size: `_text_image` is `None`, `_error` holds the reason, and the frame is blank.
 - **`binarize` is strict `> 0.5`** — a value of exactly 0.5 is off.
 
 ---
@@ -204,10 +210,11 @@ The fastest way to check animation output — no server needed:
 
 ```python
 from flipdisc.gfx.terminal import print_frame, print_animation_frames
+from flipdisc.animations import Viewport
 from flipdisc.animations.text import TextAnimation
 
-anim = TextAnimation(28, 28)
-anim.configure(text="HI", mode="static", font="compact")
+anim = TextAnimation(Viewport(28, 28))
+anim.configure(text="HI", mode="static", size=5)
 print("error:", anim._error)        # check for silent failures
 print("image:", anim._text_image)   # None = nothing will render
 print_frame(anim.render_gray())     # █ lit, · dark

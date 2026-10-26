@@ -9,6 +9,7 @@ from flipdisc.gfx.images import load_gray
 
 from .base import Animation, register_animation
 from .params import Param
+from .viewport import Viewport
 
 
 @register_animation("image")
@@ -27,8 +28,8 @@ class ImageAnimation(Animation):
 
     PARAMS = (Param("src", str, None, nullable=True),)
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=("binarize",))
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=("binarize",))
         self._frame: np.ndarray | None = None
 
     @override

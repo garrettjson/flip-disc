@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from flipdisc.animations.rip import Rip
+from flipdisc.animations.viewport import Viewport
 
 
 def _run(anim: Rip, frames: int, dt: float = 0.05) -> list[np.ndarray]:
@@ -37,7 +38,7 @@ def _rips(frames: list[np.ndarray]) -> list[list[np.ndarray]]:
 
 def test_render_shape_and_values():
     np.random.seed(0)
-    anim = Rip(28, 28)
+    anim = Rip(Viewport(28, 28))
     for frame in _run(anim, 60):
         assert frame.shape == (28, 28)
         assert frame.dtype == np.float32
@@ -46,7 +47,7 @@ def test_render_shape_and_values():
 
 def test_sheets_alternate_black_and_white():
     np.random.seed(0)
-    anim = Rip(28, 28)
+    anim = Rip(Viewport(28, 28))
     # At 20 fps each cycle is 0.5 s at rest plus a 0.4 s rip: 18 frames
     frames = [np.zeros((28, 28)), *_run(anim, 18 * 4 + 6)]
     # A frame in the middle of each rest
@@ -56,7 +57,7 @@ def test_sheets_alternate_black_and_white():
 
 def test_rests_for_the_pause_between_rips():
     np.random.seed(0)
-    frames = _run(Rip(28, 28), 18 * 3)
+    frames = _run(Rip(Viewport(28, 28)), 18 * 3)
     torn = [_solid(frame) is None for frame in frames]
     # The first rip shows on the frame after 0.5 s, and each starts 18 frames
     # after the one before
@@ -70,7 +71,7 @@ def test_rests_for_the_pause_between_rips():
 
 def test_no_pause_rips_back_to_back():
     np.random.seed(0)
-    anim = Rip(28, 28)
+    anim = Rip(Viewport(28, 28))
     anim.configure(pause=0)
     frames = _run(anim, 8 * 4)
     starts = [i for i in range(len(frames)) if i % 8 == 0]
@@ -80,7 +81,7 @@ def test_no_pause_rips_back_to_back():
 def test_a_rip_starts_as_a_crack_right_across_the_display():
     for seed in range(20):
         np.random.seed(seed)
-        crack = _rips(_run(Rip(28, 28), 12))[0][0]
+        crack = _rips(_run(Rip(Viewport(28, 28)), 12))[0][0]
         rows, cols = np.nonzero(crack)
         # A thin line from one edge of the display to another
         assert crack.sum() < 2.5 * 28
@@ -96,7 +97,7 @@ def test_a_rip_starts_as_a_crack_right_across_the_display():
 def test_the_hole_only_grows():
     for seed in range(10):
         np.random.seed(seed)
-        anim = Rip(28, 28)
+        anim = Rip(Viewport(28, 28))
         anim.configure(rip_time=2)  # many frames to compare
         for rip in _rips(_run(anim, 60)):
             for before, after in pairwise(rip):
@@ -106,7 +107,7 @@ def test_the_hole_only_grows():
 def test_the_hole_is_widest_where_the_tear_is_grabbed():
     for seed in range(10):
         np.random.seed(seed)
-        anim = Rip(28, 28)
+        anim = Rip(Viewport(28, 28))
         anim.configure(rip_time=2)
         _run(anim, 10 + 20)  # halfway through the rip
         tear = anim._tear
@@ -120,7 +121,7 @@ def test_the_hole_is_widest_where_the_tear_is_grabbed():
 
 def test_no_bulge_pulls_straight_edges():
     np.random.seed(0)
-    anim = Rip(28, 28)
+    anim = Rip(Viewport(28, 28))
     anim.configure(bulge=0, rip_time=2)
     _run(anim, 10 + 12)
     tear = anim._tear
@@ -132,7 +133,7 @@ def test_no_bulge_pulls_straight_edges():
 
 def test_reset():
     np.random.seed(0)
-    anim = Rip(28, 28)
+    anim = Rip(Viewport(28, 28))
     _run(anim, 25)
     anim.reset(seed=1)
     assert anim.current_time == 0.0
@@ -143,7 +144,7 @@ def test_reset():
 @pytest.mark.parametrize(("width", "height"), [(1, 1), (7, 3), (28, 7), (56, 56)])
 def test_other_sizes(width, height):
     np.random.seed(0)
-    frames = _run(Rip(width, height), 18 * 2 + 1)
+    frames = _run(Rip(Viewport(width, height)), 18 * 2 + 1)
     assert all(frame.shape == (height, width) for frame in frames)
     assert _solid(frames[5]) == 0.0
     assert _solid(frames[18 + 5]) == 1.0

@@ -19,7 +19,9 @@ hides the far side of the disc behind the hole while the near side passes in
 front of it.
 
 Distances are in units of half the display's shorter side; the disc reaches
-past the corners.
+past the corners. Each particle and each point of its streak is one dot, so a
+bigger display shows more of them at the same density; inflow is a speed in
+design dots, so it grows with the display.
 """
 
 import math
@@ -29,6 +31,7 @@ import numpy as np
 
 from .base import Animation, register_animation
 from .params import Param
+from .viewport import Viewport
 
 # Angular speed is `spin` at this radius
 _REFERENCE_RADIUS = 0.5
@@ -41,6 +44,9 @@ _ARM_SHARPNESS = 3.0
 
 # Share of particles lit between the arms, a faint haze of streaks
 _HAZE = 0.1
+
+# Longest trail, in dots
+_MAX_TRAIL = 6
 
 
 @register_animation("black_hole")
@@ -60,14 +66,15 @@ class BlackHole(Animation):
         Param("hole_size", float, 0.18, min=0, max=0.6, step=0.02),
         # 0 is face on, 90 edge on
         Param("tilt", float, 35, min=0, max=80, step=5, unit="°"),
-        Param("trail", int, 2, min=1, max=6, unit="px"),
+        Param("trail", int, 2, min=1, max=_MAX_TRAIL, unit="px"),
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=None)
-        self._scale = min(width, height) / 2
-        # The disc reaches the corners, plus a trail's length
-        self._rim = (math.hypot(width, height) / 2 + 6) / self._scale
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=None)
+        # Dots per unit of distance
+        self._unit = self.scale.short_side / 2
+        # The disc reaches the corners, plus the longest trail
+        self._rim = (math.hypot(self.width, self.height) / 2 + _MAX_TRAIL) / self._unit
         self._pattern_angle = 0.0
         self._init_particles()
 
@@ -118,7 +125,7 @@ class BlackHole(Animation):
     def step(self, dt: float) -> None:
         self.current_time += dt
         self._theta = (self._theta + self._angular_speed(self._r) * dt) % (2 * math.pi)
-        self._r -= self.params["inflow"] / self._scale * dt
+        self._r -= self.scale.length(self.params["inflow"]) / self._unit * dt
         self._pattern_angle += self._angular_speed(self._rim) * dt
 
         swallowed = self._r < self._inner_radius()
@@ -144,9 +151,9 @@ class BlackHole(Animation):
         r = self._r[lit]
         theta = self._theta[lit]
 
-        # Streak points one pixel apart along the orbit, trailing behind
+        # Streak points one dot apart along the orbit, trailing behind
         direction = 1.0 if self.params["spin"] >= 0 else -1.0
-        back = np.arange(self.params["trail"])[:, None] / (r * self._scale)
+        back = np.arange(self.params["trail"])[:, None] / (r * self._unit)
         theta = theta - direction * back
         r = np.broadcast_to(r, theta.shape)
 
@@ -158,8 +165,8 @@ class BlackHole(Animation):
         hole = self.params["hole_size"]
         hidden = (np.hypot(x, y) < hole) & (y < 0)
 
-        col = np.floor(self.width / 2 + x * self._scale).astype(np.intp)
-        row = np.floor(self.height / 2 + y * self._scale).astype(np.intp)
+        col = np.floor(self.width / 2 + x * self._unit).astype(np.intp)
+        row = np.floor(self.height / 2 + y * self._unit).astype(np.intp)
         shown = (
             ~hidden & (col >= 0) & (col < self.width) & (row >= 0) & (row < self.height)
         )

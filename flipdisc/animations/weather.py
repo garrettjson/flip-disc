@@ -14,10 +14,13 @@ from typing import Any, override
 
 import numpy as np
 
+from flipdisc.gfx import draw
+
 from .base import register_animation
 from .composed import ComposedAnimation
 from .params import Param
 from .text import TextAnimation
+from .viewport import Viewport
 from .weather_icon import ICON_PARAMS, WeatherIconAnimation
 
 # Small degree symbol: 3×3 diamond
@@ -39,7 +42,8 @@ class WeatherAnimation(ComposedAnimation):
     Layout (28x28):
         - Icon: WeatherIconAnimation fills full canvas, placed top-right so the
           bottom-left region stays dark for the temperature text.
-        - Temp: TextAnimation at x=1, y=height-8 (1px bottom pad), left-aligned.
+        - Temp: TextAnimation in the bottom 8 rows from x=1, left-aligned, so
+          the digits end a row above the bottom edge.
           Shows the numeric value only; degree symbol + unit are blitted in
           render_gray so they sit flush against the number regardless of width.
         - Both layers blend with "add" (np.maximum).
@@ -70,18 +74,18 @@ class WeatherAnimation(ComposedAnimation):
         *ICON_PARAMS,
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height)
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport)
         self._show_degree = self.params["show_degree"]
         self._override_condition: str | None = None
-        icon = WeatherIconAnimation(width, height)
+        icon = WeatherIconAnimation(self.viewport)
         icon.configure(condition="cloudy")
-        temp = TextAnimation(width - 1, 7)
-        temp.configure(text="--", mode="static", font="standard", align="left")
+        temp = TextAnimation(self.viewport.region(self.width - 1, 8))
+        temp.configure(text="--", mode="static", align="left")
         self.compose(
             [
                 (icon, {"id": "icon", "x": 0, "y": 0, "blend": "add"}),
-                (temp, {"id": "temp", "x": 1, "y": height - 8, "blend": "add"}),
+                (temp, {"id": "temp", "x": 1, "y": self.height - 8, "blend": "add"}),
             ]
         )
 
@@ -112,21 +116,14 @@ class WeatherAnimation(ComposedAnimation):
         for layer in self._layers:
             if layer.id != "temp":
                 continue
-            text_img = layer.anim._text_image
+            text_img, font = layer.anim._text_image, layer.anim._font
             if text_img is None:
                 break
 
-            h, w = canvas.shape
-            text_w = text_img.shape[1]
-
-            # Degree symbol: 1px gap after number, raised 3px to act as superscript
-            dx = layer.x + text_w + 1
-            dy = layer.y - 2
-            for dr in range(_DEGREE.shape[0]):
-                for dc in range(_DEGREE.shape[1]):
-                    r, c = dy + dr, dx + dc
-                    if 0 <= r < h and 0 <= c < w:
-                        canvas[r, c] = max(canvas[r, c], _DEGREE[dr, dc])
+            # Degree symbol: 1px gap after the number, its top 2 rows above
+            # the digits' so it reads as a superscript
+            digits_top = layer.y + font.centre_top(layer.height) + font.cap_top
+            draw.image(canvas, _DEGREE, layer.x + text_img.shape[1] + 1, digits_top - 2)
             break
 
         return canvas

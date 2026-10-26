@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from flipdisc.animations.viewport import Viewport
 from flipdisc.games.snake import Snake, _State
 
 DT = 0.05  # 20 fps
@@ -22,7 +23,7 @@ def _move(game: Snake, cells: int = 1) -> None:
 
 def _game(width: int = 28, height: int = 28, **params) -> Snake:
     np.random.seed(0)
-    game = Snake(width, height)
+    game = Snake(Viewport(width, height))
     if params:
         game.configure(**params)
         game.reset()
@@ -180,7 +181,7 @@ def test_food_blinks():
 
 def test_new_food_never_lands_on_the_snake():
     np.random.seed(1)
-    game = Snake(5, 5)
+    game = Snake(Viewport(5, 5))
     game.configure(start_length=4)
     game.reset()
     for _ in range(200):
@@ -207,3 +208,19 @@ def test_render_at_other_sizes(width, height):
         assert frame.shape == (height, width)
         assert frame.dtype == np.float32
         assert set(np.unique(frame)) <= {0.0, 1.0}
+
+
+def test_a_score_too_wide_for_the_standard_size_is_set_smaller():
+    game = Snake(Viewport(28, 28))
+    frame = np.zeros((28, 28), dtype=np.float32)
+    game.draw_score(frame, 999999)  # 29 dots wide at 5x8
+    rows = np.flatnonzero(frame.any(axis=1))
+    assert rows.size == 4  # 3x5 digits fill 4 rows
+
+
+def test_the_score_grows_with_the_display():
+    game = Snake(Viewport(126, 126))
+    frame = np.zeros((126, 126), dtype=np.float32)
+    game.draw_score(frame, 42)
+    rows = np.flatnonzero(frame.any(axis=1))
+    assert rows.size > 12  # 12x24 digits, not 5x8

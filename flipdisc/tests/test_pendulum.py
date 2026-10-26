@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from flipdisc.animations.pendulum import Pendulum
+from flipdisc.animations.viewport import Viewport
 
 
 def _period(anim: Pendulum, dt: float = 0.01) -> float:
@@ -32,7 +33,7 @@ def _energy(anim: Pendulum) -> float:
 
 @pytest.mark.parametrize("arms", [1, 3, 5])
 def test_render_shape_and_values(arms):
-    anim = Pendulum(28, 28)
+    anim = Pendulum(Viewport(28, 28))
     anim.configure(arms=arms)
     for _ in range(100):
         anim.step(0.05)
@@ -43,7 +44,7 @@ def test_render_shape_and_values(arms):
 
 
 def test_hangs_from_a_three_by_two_mount_at_the_top():
-    anim = Pendulum(28, 28)
+    anim = Pendulum(Viewport(28, 28))
     anim.configure(initial_angle=0)
     frame = anim.render_gray()
     assert frame[0:2, 13:16].all()
@@ -53,7 +54,7 @@ def test_hangs_from_a_three_by_two_mount_at_the_top():
 
 
 def test_bob_is_about_three_dots_across():
-    anim = Pendulum(28, 28)
+    anim = Pendulum(Viewport(28, 28))
     anim.configure(initial_angle=0)
     frame = anim.render_gray()
     bob_row = round(anim.anchor_y + anim.length)
@@ -62,10 +63,10 @@ def test_bob_is_about_three_dots_across():
 
 
 def test_no_trail():
-    swung = Pendulum(28, 28)
+    swung = Pendulum(Viewport(28, 28))
     for _ in range(37):
         swung.step(0.05)
-    still = Pendulum(28, 28)
+    still = Pendulum(Viewport(28, 28))
     still.angles = swung.angles
     # Only the pendulum's current position is drawn
     assert np.array_equal(swung.render_gray(), still.render_gray())
@@ -73,7 +74,7 @@ def test_no_trail():
 
 @pytest.mark.parametrize("arms", [1, 2, 5])
 def test_lit_dots_follow_every_joint(arms):
-    anim = Pendulum(28, 28)
+    anim = Pendulum(Viewport(28, 28))
     anim.configure(arms=arms)
     for _ in range(60):
         anim.step(0.05)
@@ -90,7 +91,7 @@ def test_lit_dots_follow_every_joint(arms):
 
 
 def test_arms_share_the_length():
-    anim = Pendulum(28, 28)
+    anim = Pendulum(Viewport(28, 28))
     anim.configure(arms=4, initial_angle=0)
     joints = anim._joint_positions()
     assert len(joints) == 5
@@ -99,24 +100,24 @@ def test_arms_share_the_length():
 
 
 def test_length_is_a_fraction_of_the_display():
-    anim = Pendulum(28, 28)
+    anim = Pendulum(Viewport(28, 28))
     anim.configure(length=0.5)
     assert anim.length == 14
-    wide = Pendulum(56, 14)
+    wide = Pendulum(Viewport(56, 14))
     assert wide.length == pytest.approx(0.8 * 14)
 
 
 @pytest.mark.parametrize(("width", "height"), [(28, 28), (56, 56), (28, 7)])
 def test_swings_at_the_same_speed_on_any_display(width, height):
     # A small swing of the default 2 m pendulum takes 2π√(L/g) ≈ 2.8 s
-    anim = Pendulum(width, height)
+    anim = Pendulum(Viewport(width, height))
     anim.configure(initial_angle=0.1, damping=1.0)
     assert _period(anim) == pytest.approx(2 * math.pi * math.sqrt(2 / 9.81), rel=0.02)
 
 
 @pytest.mark.parametrize("change", [{"initial_angle": -0.5}, {"arms": 3}])
 def test_configure_restarts_from_rest(change):
-    anim = Pendulum(28, 28)
+    anim = Pendulum(Viewport(28, 28))
     anim.configure(arms=2)
     for _ in range(10):
         anim.step(0.05)
@@ -127,7 +128,7 @@ def test_configure_restarts_from_rest(change):
 
 
 def test_changing_length_keeps_swinging():
-    anim = Pendulum(28, 28)
+    anim = Pendulum(Viewport(28, 28))
     anim.configure(arms=2)
     for _ in range(10):
         anim.step(0.05)
@@ -139,7 +140,7 @@ def test_changing_length_keeps_swinging():
 
 @pytest.mark.parametrize("arms", [2, 3, 5])
 def test_chain_conserves_energy_without_damping(arms):
-    anim = Pendulum(28, 28)
+    anim = Pendulum(Viewport(28, 28))
     anim.configure(arms=arms, damping=1.0, initial_angle=2.5)
     start = _energy(anim)
     for _ in range(600):
@@ -151,7 +152,7 @@ def test_chain_conserves_energy_without_damping(arms):
 @pytest.mark.parametrize(("arms", "chaotic"), [(1, False), (2, True), (5, True)])
 def test_multiple_arms_are_chaotic(arms, chaotic):
     def run(nudge: float) -> np.ndarray:
-        anim = Pendulum(28, 28)
+        anim = Pendulum(Viewport(28, 28))
         anim.configure(arms=arms)  # default start, horizontal
         anim.angles[-1] += nudge
         for _ in range(600):
@@ -166,7 +167,7 @@ def test_multiple_arms_are_chaotic(arms, chaotic):
 @pytest.mark.parametrize(("width", "height"), [(7, 7), (14, 7), (28, 7), (1, 1)])
 @pytest.mark.parametrize("arms", [1, 5])
 def test_other_sizes(width, height, arms):
-    anim = Pendulum(width, height)
+    anim = Pendulum(Viewport(width, height))
     anim.configure(arms=arms)
     for _ in range(100):
         anim.step(0.05)

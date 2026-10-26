@@ -29,6 +29,7 @@ lazy from scipy.spatial import cKDTree
 from . import poisson
 from .base import Animation, register_animation
 from .params import Param
+from .viewport import Viewport
 
 _TWO_PI = 2.0 * math.pi
 
@@ -69,8 +70,8 @@ class FluidSimulation(Animation):
         Param("particle_radius", float, 0.4, min=0.25, max=0.5, step=0.05, unit="px"),
     )
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, processing_steps=("binarize",))
+    def __init__(self, viewport: Viewport):
+        super().__init__(viewport, processing_steps=("binarize",))
 
         # Each parameter is mirrored in a private attribute of the same name
         for name, value in self.params.items():

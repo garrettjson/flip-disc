@@ -8,6 +8,8 @@ import numpy as np
 from flipdisc.exceptions import AnimationError
 
 from .params import Param
+from .scaling import DisplayScale
+from .viewport import Viewport
 
 
 class Animation(ABC):
@@ -20,6 +22,10 @@ class Animation(ABC):
     Subclasses declare their parameters in PARAMS and react to changes in
     on_configure(**params), which only ever receives declared, validated,
     correctly typed values.
+
+    Each is built for a ``Viewport`` (its box on a display); ``self.width``
+    and ``self.height`` are the box, and ``self.scale`` converts sizes
+    designed for a 28-dot display to this one (see scaling.py).
 
     Optional overrides:
     - on_configure(**params): apply changed parameters
@@ -37,17 +43,13 @@ class Animation(ABC):
 
     def __init__(
         self,
-        width: int,
-        height: int,
+        viewport: Viewport,
         processing_steps: tuple[str, ...] | None = ("binarize",),
     ):
-        if width <= 0 or height <= 0:
-            raise AnimationError(
-                f"Animation dimensions must be positive: {width}x{height}"
-            )
-
-        self.width = width
-        self.height = height
+        self.viewport = viewport
+        self.width = viewport.width
+        self.height = viewport.height
+        self.scale = DisplayScale(viewport)
         self.processing_steps = processing_steps
         self.current_time = 0.0
         # Current value of every declared parameter, starting from the defaults
@@ -136,24 +138,15 @@ def register_animation(name: str):
     return decorator
 
 
-def get_animation(name: str, width: int, height: int) -> Animation:
-    """
-    Factory function to create animation instances.
+def get_animation(name: str, viewport: Viewport) -> Animation:
+    """Create the animation registered as ``name``, drawing in ``viewport``.
 
-    Args:
-        name: Animation name
-        width: Display width
-        height: Display height
-
-    Returns:
-        Animation instance
-
-    Raises:
-        AnimationError: If animation not found
+    Raises AnimationError if the name is unknown or the animation fails to
+    build.
     """
     animation_class = get_animation_class(name)
     try:
-        return animation_class(width, height)
+        return animation_class(viewport)
     except Exception as e:
         raise AnimationError(f"Failed to create animation '{name}': {e}") from e
 

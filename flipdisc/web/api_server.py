@@ -25,7 +25,7 @@ from flipdisc.exceptions import (
     HardwareError,
     SerialConnectionError,
 )
-from flipdisc.fonts.loader import list_fonts as list_font_names
+from flipdisc.fonts.loader import list_families
 from flipdisc.games import game_controls, list_games
 from flipdisc.services.weather import WeatherData, fetch_weather
 
@@ -103,7 +103,7 @@ class ApiServer:
         @self.app.get("/fonts")
         async def list_fonts():
             try:
-                return {"fonts": list_font_names()}
+                return {"fonts": list_families()}
             except (tomllib.TOMLDecodeError, OSError) as e:
                 logger.error(f"Error listing fonts: {e}")
                 raise HTTPException(500, f"Failed to list fonts: {e}") from e
