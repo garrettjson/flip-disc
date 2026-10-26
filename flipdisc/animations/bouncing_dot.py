@@ -10,6 +10,21 @@ from .params import Param
 from .viewport import Viewport
 
 
+def _bounce(pos: int, velocity: float, limit: int) -> tuple[int, float]:
+    """Stop a position at a wall it reached and point velocity away from it.
+
+    Pointing away (rather than negating) matters on frames where the cadence
+    takes no step: the dot is still at the wall, and negating again would turn
+    it back into the wall, where it stays. An overshoot is clamped to the wall
+    rather than reflected, so the dot always lights the edge it bounces off.
+    """
+    if pos <= 0:
+        return 0, abs(velocity)
+    if pos >= limit:
+        return limit, -abs(velocity)
+    return pos, velocity
+
+
 @register_animation("bouncing_dot")
 class BouncingDot(Animation):
     """Simple bouncing dot"""
@@ -61,13 +76,8 @@ class BouncingDot(Animation):
         self.y += step_y if self.dy > 0 else -step_y
 
         # Bounce off walls
-        if self.x <= 0 or self.x >= self.width - 1:
-            self.dx *= -1
-            self.x = max(0, min(self.x, self.width - 1))
-
-        if self.y <= 0 or self.y >= self.height - 1:
-            self.dy *= -1
-            self.y = max(0, min(self.y, self.height - 1))
+        self.x, self.dx = _bounce(self.x, self.dx, self.width - 1)
+        self.y, self.dy = _bounce(self.y, self.dy, self.height - 1)
 
     @override
     def render_gray(self) -> np.ndarray:
