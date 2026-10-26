@@ -1,26 +1,34 @@
-# Font configurations for bitmap sprite sheets.
-# Paths are relative to the project root.
-# letter_width / letter_height: glyph size in pixels
-# padding: gap between image edge and first glyph (same in x and y)
-# margin: gap between glyphs (same in x and y)
-# ascii_start: ASCII code of the first glyph in the sheet
-# letters: total number of glyphs encoded in the sheet
+# Fonts: each is a family of sizes of one typeface, drawn on the dot grid.
+# Text asks for a height in dots and gets the size nearest to it (see
+# flipdisc/fonts/font.py). Sizes are BDF files, relative to this directory;
+# add one with flipdisc/fonts/importer.py. The default family is
+# DEFAULT_FAMILY in flipdisc/fonts/loader.py.
 
-[standard]
-path = "assets/text/standard.bmp"
-letter_width = 5
-letter_height = 7
-padding = 1
-margin = 1
-ascii_start = 32
-letters = 95
+[spleen]
+# Spleen (BSD licence, spleen/LICENSE), and below its smallest size a 3x5
+# hand-drawn for this display
+sizes = [
+    "spleen/3x5.bdf",
+    "spleen/5x8.bdf",
+    "spleen/6x12.bdf",
+    "spleen/8x16.bdf",
+    "spleen/12x24.bdf",
+    "spleen/16x32.bdf",
+    "spleen/32x64.bdf",
+]
 
-[compact]
-path = "assets/text/compact.bmp"
-letter_width = 3
-letter_height = 5
-padding = 1
-margin = 1
-ascii_start = 32
-letters = 95
-
+[x11]
+# The X Window System's "fixed" terminal fonts (public domain, x11/COPYING)
+sizes = [
+    "x11/4x6.bdf",
+    "x11/5x7.bdf",
+    "x11/5x8.bdf",
+    "x11/6x9.bdf",
+    "x11/6x10.bdf",
+    "x11/6x12.bdf",
+    "x11/6x13.bdf",
+    "x11/7x14.bdf",
+    "x11/9x15.bdf",
+    "x11/9x18.bdf",
+    "x11/10x20.bdf",
+]

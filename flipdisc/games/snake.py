@@ -15,7 +15,6 @@ from flipdisc.animations.base import register_animation
 from flipdisc.animations.cadence import Cadence
 from flipdisc.animations.params import Param
 from flipdisc.animations.viewport import Viewport
-from flipdisc.fonts.loader import load_font
 
 from .base import Control, Game
 
@@ -71,7 +70,6 @@ class Snake(Game):
 
     def __init__(self, viewport: Viewport):
         super().__init__(viewport, processing_steps=None)
-        self._font = load_font("standard")
         self._new_game()
 
     def _new_game(self) -> None:
@@ -184,7 +182,7 @@ class Snake(Game):
     def render_gray(self) -> np.ndarray:
         frame = np.zeros((self.height, self.width), dtype=np.float32)
         if self._state is _State.OVER:
-            self._draw_score(frame)
+            self.draw_score(frame, self.score)
             return frame
 
         flashing_off = (
@@ -199,15 +197,6 @@ class Snake(Game):
         if self.food is not None and not food_off and self._state is not _State.DYING:
             frame[self.food[1], self.food[0]] = 1.0
         return frame
-
-    def _draw_score(self, frame: np.ndarray) -> None:
-        text = self._font.render_line(str(self.score))
-        h, w = text.shape
-        if w > self.width or h > self.height:
-            return
-        top = (self.height - h) // 2
-        left = (self.width - w) // 2
-        frame[top : top + h, left : left + w] = text
 
     @override
     def reset(self, seed: int | None = None) -> None:

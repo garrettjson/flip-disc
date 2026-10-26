@@ -75,29 +75,25 @@ Notes
 
 ## Fonts
 
-Font metadata lives in `assets/text/fonts.toml`. Each section defines the parsing params for one bitmap sprite sheet:
+A font is a family of bitmap sizes, each drawn on the dot grid, listed in `assets/text/fonts.toml`:
 
-```toml
-[standard]
-path = "assets/text/standard.bmp"
-letter_width = 5
-letter_height = 7
-padding = 1
-margin = 1
-ascii_start = 32
-letters = 95
-```
+- **`spleen`** (the default, `DEFAULT_FAMILY` in `flipdisc/fonts/loader.py`): [Spleen](https://github.com/fcambus/spleen) from 5×8 to 32×64 (BSD licence, `assets/text/spleen/LICENSE`), and below that a 3×5 hand-drawn for this display.
+- **`x11`**: the X Window System's "fixed" fonts, 4×6 to 10×20 (public domain).
 
-Load a font by name in code:
+Text asks for a height (`size`, in dots on a 28-dot display) and gets the drawn size nearest that height scaled to the display; past a family's largest size, that size is enlarged by a whole number. Where text has to fit (a static line, a clock, a score), it drops to smaller sizes until it does.
 
 ```python
-from flipdisc.fonts.loader import load_font
+from flipdisc.fonts.loader import load_family
 
-font = load_font("standard")   # 5×7, 95 glyphs
-font = load_font("compact")    # 3×5, smaller glyph set
+font = load_family("spleen").nearest(8)   # Spleen 5×8
+font.render_line("HELLO")                  # float32 array, 8 × 24
 ```
 
-To add a new font, drop a BMP sprite sheet in `assets/text/` and add a matching section to `fonts.toml`.
+Sizes are [BDF](https://en.wikipedia.org/wiki/Glyph_Bitmap_Distribution_Format) files, editable in a text editor or a pixel-font editor such as FontForge or Bits'N'Picas. To add one, copy it in with the importer (it keeps the printable ASCII characters), then list it under a family in `fonts.toml`:
+
+```bash
+uv run python -m flipdisc.fonts.importer ~/Downloads/7x14.bdf assets/text/x11/7x14.bdf
+```
 
 
 ## Project Layout
@@ -111,7 +107,7 @@ flip-disc/
 │  ├─ architecture.md         # How the implementation works, end to end
 │  └─ hardware.md             # AlfaZeta panel reference (wiring, DIP switches, protocol)
 ├─ assets/
-│  ├─ text/                   # Bitmap font sprite sheets + fonts.toml
+│  ├─ text/                   # Bitmap fonts (BDF), one folder per source, + fonts.toml
 │  ├─ images/weather/         # Weather icon BMPs
 │  └─ clips/clips.toml        # Clip manifest (GIF frame sequences)
 └─ flipdisc/
@@ -132,7 +128,7 @@ flip-disc/
    │  │  pendulum.py, point_cloud.py, rain_splash.py, rip.py,
    │  │  sandpile.py, simplex_noise.py, wireframe_cube.py
    │  └─ sorting/             # `sort`: one module per algorithm
-   ├─ fonts/loader.py         # BitmapFont class + load_font(name)
+   ├─ fonts/                  # BDF reader, font sizes and families, importer
    ├─ clips/                  # GIF clip loader + importer utilities
    ├─ services/               # Weather fetch (Open-Meteo), moon phase
    ├─ hardware/               # RS-485 protocol + serial transport

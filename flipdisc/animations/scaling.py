@@ -20,8 +20,12 @@ smaller dimension over 28):
   whose centre falls inside the line, so a width of 1.19 is mostly one dot
   with an occasional second.
 
+- **Text** grows like an object, choosing among a font's drawn sizes (see
+  ``flipdisc/fonts/font.py``).
+
 Lines never get thinner than their design width, so they don't break up on a
-display smaller than 28. Objects can shrink, but ``dots`` never returns less
+display smaller than 28, and text never gets smaller than its design size
+unless it has to, to fit. Objects can shrink, but ``dots`` never returns less
 than one.
 
 Every animation has one, as ``self.scale``.
@@ -54,6 +58,11 @@ class DisplayScale:
     def dots(self, design: float) -> int:
         """An object size in whole dots, never less than one."""
         return max(1, round(self.object(design)))
+
+    def text(self, design: float) -> float:
+        """A text height in dots, to pick a font size by: never below
+        ``design``, where the smallest letters are already drawn."""
+        return design * max(1.0, self.factor**OBJECT_EXPONENT)
 
     def line(self, design: float = 1.0) -> float:
         """A line width in dots, fractional and never below ``design``."""

@@ -36,4 +36,4 @@ CONTROLS = (
 ## Display
 
 - 28×28, one bit per dot, and every change is a physical flip. Prefer whole-cell motion and avoid redrawing what hasn't changed; the pipeline only sends panels whose dots changed.
-- Use the compact font (3×5) for scores or messages (`flipdisc/fonts/`).
+- `draw_score(frame, score)` shows a final score in the middle of the display, as large as fits. For other text, pick a size from a font family (`load_family(DEFAULT_FAMILY).nearest(height)`, `flipdisc/fonts/`); the 5-dot size (3×5) fits a 28-dot display best.

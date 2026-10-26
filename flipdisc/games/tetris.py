@@ -22,7 +22,7 @@ from flipdisc.animations.base import register_animation
 from flipdisc.animations.cadence import Cadence
 from flipdisc.animations.params import Param
 from flipdisc.animations.viewport import Viewport
-from flipdisc.fonts.loader import load_font
+from flipdisc.fonts.loader import DEFAULT_FAMILY, load_family
 
 from .base import Control, Game
 
@@ -107,6 +107,9 @@ _SOFT_DROP_SPEED = 20.0  # rows/s
 _SHIFT_DELAY = 0.2  # s
 _SHIFT_SPEED = 10.0  # cells/s
 
+# Height of the score, level and rows beside the well, in dots
+_PANEL_TEXT = 5
+
 # Full rows flash off and on this many times before they clear
 _CLEAR_FLASHES = 2
 _CLEAR_FLASH_PERIOD = 0.2  # s
@@ -146,8 +149,9 @@ class Tetris(Game):
 
     def __init__(self, viewport: Viewport):
         super().__init__(viewport, processing_steps=None)
-        self._panel_font = load_font("compact")
-        self._score_font = load_font("standard")
+        # The well and its cells stay at their design size for now, so the
+        # panel's numbers do too
+        self._panel_font = load_family(DEFAULT_FAMILY).nearest(_PANEL_TEXT)
         # Border at the left and along the bottom, the next piece above
         self.well_width = max(1, min(_WELL_WIDTH, self.width - 2))
         self.well_height = max(1, min(_WELL_HEIGHT, self.height - 2))
@@ -379,7 +383,7 @@ class Tetris(Game):
     def render_gray(self) -> np.ndarray:
         frame = np.zeros((self.height, self.width), dtype=np.float32)
         if self._state is _State.OVER:
-            self._draw_final_score(frame)
+            self.draw_score(frame, self.score)
             return frame
 
         well = self.board.copy()
@@ -430,9 +434,9 @@ class Tetris(Game):
         frame[top : top + h, left : left + w] = piece
 
     def _text(self, text: str) -> np.ndarray:
-        """``text`` in the small font, without the blank row under the digits."""
-        image = self._panel_font.render_line(text)
-        return image[: np.flatnonzero(image.any(axis=1)).max() + 1]
+        """``text`` in the small font, just the rows its capitals fill."""
+        font = self._panel_font
+        return font.render_line(text)[font.cap_top : font.baseline]
 
     def _centred(self, rows: int) -> int:
         """Top row that centres small-font text in the first ``rows`` rows."""
@@ -463,17 +467,6 @@ class Tetris(Game):
         if top < 0 or top + h > self.height:
             return
         frame[top : top + h, left : left + w] = image
-
-    def _draw_final_score(self, frame: np.ndarray) -> None:
-        for font in (self._score_font, self._panel_font):
-            text = font.render_line(str(self.score))
-            h, w = text.shape
-            if w > self.width or h > self.height:
-                continue
-            top = (self.height - h) // 2
-            left = (self.width - w) // 2
-            frame[top : top + h, left : left + w] = text
-            return
 
     @override
     def reset(self, seed: int | None = None) -> None:

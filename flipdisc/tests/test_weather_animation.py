@@ -457,3 +457,16 @@ class TestRainWeatherAnimation:
         assert precip._spawn_rate == 2.0
         assert precip._fall_speed == 6.67
         assert precip._droplet_size == 3
+
+
+def test_the_temperature_is_set_in_the_default_size_with_its_degree_sign():
+    anim = WeatherAnimation(Viewport(28, 28))
+    anim.configure(temp=72, override_condition="sunny")
+    (temp,) = [layer for layer in anim._layers if layer.id == "temp"]
+    assert temp.anim._font.name == "spleen/5x8"
+    frame = anim.render_gray()
+    # Digits fill rows 21-26, a row clear of the bottom; the degree sign's
+    # top is 2 rows above theirs, just after the number
+    digits = frame[20:, :11]
+    assert np.flatnonzero(digits.any(axis=1)).tolist() == [1, 2, 3, 4, 5, 6]
+    assert frame[19, 12] == 1 and frame[27].sum() == 0

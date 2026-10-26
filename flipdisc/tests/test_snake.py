@@ -208,3 +208,19 @@ def test_render_at_other_sizes(width, height):
         assert frame.shape == (height, width)
         assert frame.dtype == np.float32
         assert set(np.unique(frame)) <= {0.0, 1.0}
+
+
+def test_a_score_too_wide_for_the_standard_size_is_set_smaller():
+    game = Snake(Viewport(28, 28))
+    frame = np.zeros((28, 28), dtype=np.float32)
+    game.draw_score(frame, 999999)  # 29 dots wide at 5x8
+    rows = np.flatnonzero(frame.any(axis=1))
+    assert rows.size == 4  # 3x5 digits fill 4 rows
+
+
+def test_the_score_grows_with_the_display():
+    game = Snake(Viewport(126, 126))
+    frame = np.zeros((126, 126), dtype=np.float32)
+    game.draw_score(frame, 42)
+    rows = np.flatnonzero(frame.any(axis=1))
+    assert rows.size > 12  # 12x24 digits, not 5x8

@@ -7,7 +7,7 @@ from PIL import Image
 from flipdisc.animations.base import get_animation, register_animation
 from flipdisc.animations.bouncing_dot import BouncingDot
 from flipdisc.animations.clip import ClipAnimation, _blit_fit
-from flipdisc.animations.composed import ComposedAnimation, _blit_region
+from flipdisc.animations.composed import ComposedAnimation
 from flipdisc.animations.image import ImageAnimation
 from flipdisc.animations.params import Param
 from flipdisc.animations.viewport import Viewport
@@ -265,40 +265,6 @@ def test_clip_animation_reset(monkeypatch):
 def test_clip_animation_processing_steps_none():
     anim = ClipAnimation(Viewport(56, 7))
     assert anim.processing_steps is None
-
-
-# ---------------------------------------------------------------------------
-# _blit_region tests
-# ---------------------------------------------------------------------------
-
-
-def test_blit_region_full():
-    canvas = np.zeros((7, 56), dtype=np.float32)
-    src = np.ones((7, 56), dtype=np.float32)
-    _blit_region(canvas, src, 0, 0)
-    np.testing.assert_array_equal(canvas, src)
-
-
-def test_blit_region_offset():
-    canvas = np.zeros((7, 56), dtype=np.float32)
-    src = np.ones((3, 10), dtype=np.float32)
-    _blit_region(canvas, src, 5, 2)
-    assert canvas[2:5, 5:15].sum() == 30
-    assert canvas[0, 0] == 0.0
-
-
-def test_blit_region_clips_to_bounds():
-    canvas = np.zeros((7, 56), dtype=np.float32)
-    src = np.ones((7, 10), dtype=np.float32)
-    _blit_region(canvas, src, 50, 0)  # starts at x=50, only 6px visible
-    assert canvas[:, 50:].sum() == 7 * 6
-
-
-def test_blit_region_negative_offset():
-    canvas = np.zeros((7, 56), dtype=np.float32)
-    src = np.ones((7, 10), dtype=np.float32)
-    _blit_region(canvas, src, -3, 0)  # only rightmost 7px of src are visible
-    assert canvas[:, 0:7].sum() == 7 * 7
 
 
 # ---------------------------------------------------------------------------

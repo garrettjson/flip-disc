@@ -44,6 +44,12 @@ def test_a_small_display_never_thins_lines_or_loses_objects():
     assert scale.dots(1) == 1
 
 
+def test_text_grows_like_an_object_but_never_shrinks():
+    assert _scale(56, 56).text(7) == pytest.approx(_scale(56, 56).object(7))
+    assert _scale(28, 7).text(7) == 7
+    assert _scale(28, 28).text(5) == 5
+
+
 def test_dots_rounds_to_whole_dots():
     assert _scale(56, 56).dots(4) == 7
     assert _scale(126, 126).dots(4) == 12

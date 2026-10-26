@@ -190,7 +190,7 @@ def test_api_serves_the_schema():
         "scroll_up",
         "scroll_down",
     ]
-    assert "standard" in text["font"]["choices"]
+    assert text["font"]["choices"] == ["spleen", "x11"]
     assert text["speed"]["unit"] == "px/s"
 
 

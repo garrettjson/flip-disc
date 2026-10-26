@@ -117,3 +117,20 @@ def test_pixel_centres_are_half_a_dot_in():
     xs, ys = draw.pixel_centres(3, 2)
     assert xs.shape == ys.shape == (2, 3)
     assert xs[0].tolist() == [0.5, 1.5, 2.5] and ys[:, 0].tolist() == [0.5, 1.5]
+
+
+@pytest.mark.parametrize(
+    ("left", "top", "lit"),
+    [(5, 2, 30), (50, 0, 3 * 6), (-3, 0, 3 * 7), (0, -2, 1 * 10), (56, 0, 0)],
+)
+def test_an_image_is_clipped_to_the_frame(left, top, lit):
+    frame = np.zeros((7, 56), dtype=np.float32)
+    draw.image(frame, np.ones((3, 10), dtype=np.float32), left, top)
+    assert frame.sum() == lit
+
+
+def test_an_image_adds_its_lit_dots_to_what_is_there():
+    frame = np.zeros((3, 3), dtype=np.float32)
+    frame[0, 0] = 1
+    draw.image(frame, np.eye(3, dtype=np.float32), 0, 0)
+    assert frame[0, 0] == 1 and frame[1, 1] == 1 and frame.sum() == 3

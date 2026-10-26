@@ -116,3 +116,27 @@ def block(frame: np.ndarray, centre: Point, width: int, height: int | None = Non
     left = math.floor(cx - width / 2 + 0.5)
     top = math.floor(cy - height / 2 + 0.5)
     frame[max(0, top) : max(0, top + height), max(0, left) : max(0, left + width)] = 1
+
+
+def overlap(
+    frame: np.ndarray, shape: tuple[int, int], left: int, top: int
+) -> tuple[tuple[slice, slice], tuple[slice, slice]] | None:
+    """Where an image of ``shape`` placed with its top-left dot at (left, top)
+    overlaps ``frame``: the frame's index and the image's. None if it doesn't."""
+    height, width = frame.shape
+    r0, r1 = max(0, top), min(height, top + shape[0])
+    c0, c1 = max(0, left), min(width, left + shape[1])
+    if r0 >= r1 or c0 >= c1:
+        return None
+    dst = (slice(r0, r1), slice(c0, c1))
+    src = (slice(r0 - top, r1 - top), slice(c0 - left, c1 - left))
+    return dst, src
+
+
+def image(frame: np.ndarray, image: np.ndarray, left: int, top: int) -> None:
+    """The lit dots of ``image``, with its top-left dot at (left, top)."""
+    placed = overlap(frame, image.shape, left, top)
+    if placed is None:
+        return
+    dst, src = placed
+    np.maximum(frame[dst], image[src], out=frame[dst])

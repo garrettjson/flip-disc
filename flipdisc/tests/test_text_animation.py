@@ -1,6 +1,7 @@
 """Tests for the text animation."""
 
 import numpy as np
+import pytest
 
 from flipdisc.animations.text import TextAnimation
 from flipdisc.animations.viewport import Viewport
@@ -18,7 +19,7 @@ def test_static_renders_centered():
 
 def test_static_too_wide_returns_blank():
     anim = TextAnimation(Viewport(10, 10))
-    # "ABCDEFGHIJ" = 10*5 + 9*1 = 59px, way too wide for 10px display
+    # "ABCDEFGHIJ" is 39 dots wide even at the smallest size
     anim.configure(text="ABCDEFGHIJ", mode="static")
     assert anim._error is not None
     frame = anim.render_gray()
@@ -95,3 +96,52 @@ def test_static_centers_text():
     # Edges should be blank
     assert frame[0, 0] == 0.0
     assert frame[27, 27] == 0.0
+
+
+def test_static_text_too_wide_for_its_size_is_set_smaller():
+    anim = TextAnimation(Viewport(28, 28))
+    anim.configure(text="Hello!", mode="static")  # 29 wide at 5x8
+    assert anim._error is None
+    assert anim._font.height == 5
+    assert anim.render_gray().any()
+
+
+@pytest.mark.parametrize(("display", "height"), [(28, 8), (56, 12), (126, 24)])
+def test_text_grows_with_the_display(display, height):
+    anim = TextAnimation(Viewport(display, display))
+    anim.configure(text="Hi", mode="static")
+    assert anim._font.height == height
+
+
+def test_a_layer_sets_text_as_on_its_display_if_it_fits():
+    display = Viewport(56, 56)
+    tall = TextAnimation(display.region(56, 14))
+    tall.configure(text="Hi", mode="static")
+    short = TextAnimation(display.region(56, 8))
+    short.configure(text="Hi", mode="static")
+    assert (tall._font.height, short._font.height) == (12, 8)
+
+
+def test_a_short_display_keeps_the_design_size():
+    anim = TextAnimation(Viewport(28, 8))
+    anim.configure(text="HI", mode="static")
+    assert anim._font.height == 8
+
+
+def test_scrolling_speed_follows_the_text_size():
+    anim = TextAnimation(Viewport(126, 126))
+    anim.configure(text="Hi", mode="scroll_left")
+    assert anim._speed_scale == 12 / 5  # letters 12 dots apart, not 5
+    anim.configure(mode="scroll_up")
+    assert anim._speed_scale == (24 + 1) / (8 + 1)  # lines 25 dots apart, not 9
+
+
+def test_wrapped_text_keeps_a_letter_gap_from_either_side():
+    anim = TextAnimation(Viewport(56, 56))
+    anim.configure(text="The quick", mode="scroll_up")
+    assert anim._margin == 1
+    assert anim._text_image.shape[1] == 54
+    assert anim._text_image.shape[0] == 12  # "The quick" fits one line
+    anim = TextAnimation(Viewport(1024, 1024))
+    anim.configure(text="Hi", mode="scroll_up")
+    assert anim._margin == anim._font.spacing > 1

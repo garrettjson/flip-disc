@@ -46,7 +46,7 @@ class WireframeCube(Animation):
 
 - **`PARAMS` is the only place a default lives.** `Animation.__init__` fills `self.params` from it; read initial values from there instead of repeating literals in `__init__`.
 - **Implement `on_configure`, not `configure`.** The base class's `configure` validates and coerces, updates `self.params`, then calls `on_configure` with only the keys that were passed. No `float(...)`, clamping, or "is this a valid mode" checks are needed inside it.
-- **Types:** `float`, `int`, `bool`, `str`, `list`. Use `min`/`max` for numbers and `choices` for enumerations; `choices` may be a callable for lists read from disk (`choices=list_fonts`). `strict=False` makes choices suggestions only — use it when an unlisted value has a sensible fallback (weather `condition`) or the list can't be trusted at validation time (clip `name`).
+- **Types:** `float`, `int`, `bool`, `str`, `list`. Use `min`/`max` for numbers and `choices` for enumerations; `choices` may be a callable for lists read from disk (`choices=list_families`). `strict=False` makes choices suggestions only — use it when an unlisted value has a sensible fallback (weather `condition`) or the list can't be trusted at validation time (clip `name`).
 - **`nullable=True` with `default=None`** means "not set / decide automatically". Check `params.get("x") is not None` before using it.
 - **`unit`, `label`, `step`** only affect the web UI.
 - **Ranges are enforced**, so set them to what the animation can actually handle, not to what looks tidy in a form. A test (`test_params.py`) checks that every animation's defaults satisfy its own declarations.
@@ -62,6 +62,7 @@ The display is 28×28 today and will grow (56×56 next, perhaps 126 or more). A 
 | Position, distance, speed | `length(d)` | the display | 2× | 4.5× |
 | Solid object (bob, ball, splash) | `object(d)`, or `dots(d)` in whole dots | `factor ** 0.75` | 1.7× | 3.1× |
 | Line width | `line(d)` | `factor ** 0.25`, never below `d` | 1.19 | 1.46 |
+| Text height | `text(d)`, then a font size | `factor ** 0.75`, never below `d` | 12 for 8 | 24 for 8 |
 
 `factor` is the smaller display dimension over 28. A parameter that's a size or a speed in dots (rain's `ring_size`) means dots on the design display; one that's a fraction of the display (pendulum `length`, cube `size`) needs no conversion.
 
@@ -74,6 +75,16 @@ draw.disc(frame, bob, self.scale.object(1.6))
 ```
 
 Points are continuous (x, y) with dot (column, row) centred at (column + 0.5, row + 0.5), and a dot is lit when its centre falls inside the shape. Keep line widths fractional: a 1.19-dot line is mostly one dot with an occasional second, which reads as slightly bolder without jumping to 2. Centre symmetric figures on a dot's centre, not on a boundary between dots, so lines through the centre don't straddle two columns; the pendulum's pivot and the analog clock do this.
+
+Text is set in a font family's drawn sizes (`flipdisc/fonts/`): ask for the size nearest a height, and step down to smaller ones when it has to fit a box. A `size` parameter is a line height in dots on the design display, and the text grows like an object without ever shrinking below that height:
+
+```python
+family = load_family(self.params["font"])
+font = family.fit(self.scale.text(size), lambda f: f.measure(text) <= self.width)
+draw.image(frame, font.render_line(text), left, font.centre_top(self.height))
+```
+
+`centre_top` centres a line by its capitals, so descenders hang below the middle. A speed for text is relative to its size (`text.py` scales it by the set font's advance), so it reads at the same pace on any display.
 
 Where a dot *is* the particle — a grain of sand, a fluid cell — it stays one dot at every size, and a bigger display shows more of them. Speeds and accelerations are still lengths (`self.scale.length`), and a count per second that should fill the same share of the display grows with its area (`self.scale.factor ** 2`). `sandpile` is the example: its pour rate grows with the area, and a column of the stream carries only so many grains a second, so a heavy pour or a big display falls as a wider stream.
 

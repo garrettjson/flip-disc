@@ -16,6 +16,8 @@ pipeline, preview, and API run it like any animation, with two differences:
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
+import numpy as np
+
 from flipdisc.animations.base import (
     Animation,
     get_animation_class,
@@ -23,6 +25,11 @@ from flipdisc.animations.base import (
 )
 from flipdisc.animations.viewport import Viewport
 from flipdisc.exceptions import AnimationError
+from flipdisc.fonts.loader import DEFAULT_FAMILY, load_family
+from flipdisc.gfx import draw
+
+# Height of a final score in dots on a 28-dot display (see ``text.py``)
+_SCORE_SIZE = 8
 
 
 @dataclass(frozen=True)
@@ -94,6 +101,19 @@ class Game(Animation):
 
     def on_release(self, action: str) -> None:
         """React to an action being released."""
+
+    def draw_score(self, frame: np.ndarray, score: int) -> None:
+        """``score`` in the middle of the display, in the default font as
+        near its size as fits; nothing if no size does."""
+        text = str(score)
+        font = load_family(DEFAULT_FAMILY).fit(
+            self.scale.text(_SCORE_SIZE),
+            lambda f: f.measure(text) <= self.width and f.height <= self.height,
+        )
+        if font is None:
+            return
+        left = (self.width - font.measure(text)) // 2
+        draw.image(frame, font.render_line(text), left, font.centre_top(self.height))
 
     def reset(self, seed: int | None = None) -> None:
         super().reset(seed)
